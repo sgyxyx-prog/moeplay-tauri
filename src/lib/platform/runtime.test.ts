@@ -20,9 +20,9 @@ describe("runtime platform capabilities", () => {
     expect(android).toMatchObject({
       orientationControl: true,
       steamIntegration: false,
-      gameLaunch: false,
+      gameLaunch: true,
       localGameScan: false,
-      emulatorImport: false,
+      emulatorImport: true,
       tray: false,
       autostart: false,
       desktopUpdater: false,
@@ -37,6 +37,8 @@ describe("runtime platform capabilities", () => {
     expect(isViewSupportedOnPlatform("settings", android)).toBe(true);
     expect(isViewSupportedOnPlatform("steam-import", android)).toBe(false);
     expect(isViewSupportedOnPlatform("emulator", android)).toBe(false);
+    expect(isViewSupportedOnPlatform("handheld", android)).toBe(true);
+    expect(isViewSupportedOnPlatform("handheld-import", android)).toBe(true);
     expect(isViewSupportedOnPlatform("diagnostics", android)).toBe(false);
   });
 });

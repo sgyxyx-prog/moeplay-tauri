@@ -30,6 +30,7 @@
     { id: "anime", label: "番剧", icon: "film", view: "anime" },
     { id: "comic", label: "漫画", icon: "book", view: "comic" },
     { id: "novel", label: "小说", icon: "collection", view: "novel" },
+    { id: "handheld", label: "掌机", icon: "gamepad", view: "handheld" },
   ];
 
   const moreItems: readonly MobileNavItem[] = [

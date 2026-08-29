@@ -54,6 +54,8 @@
   const isMiniWindow = $state(typeof window !== "undefined" && window.location.hash.startsWith("#mini"));
   const isAndroid = $derived(platformStore.isAndroid);
   const isBigPicture = $derived(uiStore.bigPictureActive && !isAndroid);
+  // 掌机模式（handheld / handheld-import）全屏独占，隐藏移动端底部导航。
+  const isHandheldView = $derived(uiStore.currentView === "handheld" || uiStore.currentView === "handheld-import");
   const toolsDrawerOpen = $derived(uiStore.drawerOpen && uiStore.drawerView === "tools");
   const managementViews = new Set(["scraper","tasks","sources","downloads","backup","stats","diagnostics","settings","steam-import","emulator"]);
   const wallpaperSurface = $derived(managementViews.has(uiStore.currentView) ? "management" : uiStore.currentView === "game-detail" ? "immersive" : "browse");
@@ -543,6 +545,7 @@
   class="app-container"
   class:fullscreen={isBigPicture}
   class:mobile-shell={isAndroid}
+  class:handheld-full={isAndroid && isHandheldView}
   class:topnav-hidden={uiStore.topNavHidden}
   data-testid="app-shell"
   data-ui-ready={booted ? "true" : "false"}
@@ -555,13 +558,15 @@
     <WallpaperStage surface={wallpaperSurface} />
 
     {#if isAndroid}
-      <MobileAppShell
-        currentView={uiStore.currentView}
-        onNavigate={pickDock}
-        onSearch={focusCurrentSearch}
-        {taskActiveCount}
-        {taskFailedCount}
-      />
+      {#if !isHandheldView}
+        <MobileAppShell
+          currentView={uiStore.currentView}
+          onNavigate={pickDock}
+          onSearch={focusCurrentSearch}
+          {taskActiveCount}
+          {taskFailedCount}
+        />
+      {/if}
     {:else}
       <div class="global-top-navigation">
         <GlobalTopNavigation
@@ -660,6 +665,14 @@
             {/await}
           {:else if uiStore.currentView === "emulator"}
             {#await import("./lib/components/EmulatorImportDialog.svelte") then { default: Comp }}
+              <Comp />
+            {/await}
+          {:else if uiStore.currentView === "handheld"}
+            {#await import("./lib/features/handheld/HandheldPage.svelte") then { default: Comp }}
+              <Comp />
+            {/await}
+          {:else if uiStore.currentView === "handheld-import"}
+            {#await import("./lib/features/handheld/HandheldImportPage.svelte") then { default: Comp }}
               <Comp />
             {/await}
           {:else}
@@ -775,6 +788,7 @@
   .app-container.topnav-hidden .global-top-navigation { opacity: 0; pointer-events: none; }
   .app-container.mobile-shell { display: block; height: 100dvh; min-height: 100svh; }
   .app-container.mobile-shell .main-content { position: absolute; inset: calc(56px + env(safe-area-inset-top)) 0 calc(64px + env(safe-area-inset-bottom)); overflow: hidden; }
+  .app-container.mobile-shell.handheld-full .main-content { inset: 0; }
   .app-container.mobile-shell .view-wrapper { touch-action: pan-x pan-y; }
   .global-top-navigation { grid-column: 1; grid-row: 1; position: relative; z-index: 95; min-width: 0; overflow: hidden; min-height: 0; transition: opacity 200ms ease; }
   .main-content { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; max-width: 100%; position: relative; z-index: 1; overflow: hidden; isolation: isolate; }

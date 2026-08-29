@@ -300,6 +300,40 @@ pub fn launch_game(
 ) -> Result<LaunchResult, String> {
     let game = db.get_game(&id)?;
 
+    // Android 掌机：android-intent:// 启动信息 → 通过 handheld 插件向模拟器应用发 Intent。
+    #[cfg(target_os = "android")]
+    if let Some(uri) = game.launch_uri.as_deref() {
+        if let Some((package, rom_path)) = crate::commands::handheld::parse_android_intent_uri(uri)
+        {
+            use tauri_plugin_handheld::HandheldExt;
+            let session_id = db.start_play_session(&id)?;
+            let launch_result =
+                app_handle.handheld_launch_game(tauri_plugin_handheld::LaunchGameRequest {
+                    package_name: package.clone(),
+                    rom_path,
+                });
+            let _ = db.end_play_session(&id, &session_id, 0);
+            return match launch_result {
+                Ok(resp) => {
+                    tracing::info!(
+                        game_id = %id,
+                        package = %package,
+                        strategy = %resp.strategy,
+                        "Android emulator game launched via intent"
+                    );
+                    Ok(LaunchResult {
+                        session_id,
+                        engine: game.library_source.clone(),
+                        engine_name: game.game_type.clone(),
+                        locale_method: "AndroidIntent".to_string(),
+                        pid: None,
+                    })
+                }
+                Err(e) => Err(format!("模拟器启动失败: {e}")),
+            };
+        }
+    }
+
     let protocol_uri = resolve_platform_launch_uri(&game.exe_path, game.launch_uri.as_deref());
     if let Some(uri) = protocol_uri {
         let session_id = db.start_play_session(&id)?;
