@@ -46,12 +46,37 @@ test("Android home exposes the PSP-style XMB focus surfaces", async ({ page }) =
   await expect(page.locator(".hh-xmb-category")).toHaveCount(5);
   await expect(page.locator(".hh-xmb-category.active")).toHaveCount(1);
   await expect(page.locator(".hh-xmb-hints")).toBeVisible();
-  await expect(page.locator("[data-testid='handheld-xmb-welcome'], [data-testid='handheld-xmb-selection']")).toHaveCount(1);
+  await expect(page.locator("[data-testid='handheld-xmb-welcome'], [data-testid='handheld-xmb-selection'], [data-testid='handheld-game-wheel'], .hh-state-panel")).toHaveCount(1);
   await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains("hh-xmb-category"))).toBe(true);
 
   await page.keyboard.press("ArrowRight");
   await expect(page.locator(".hh-xmb-category.active")).toHaveCount(1);
-  await expect(page.locator(".hh-xmb-context b")).toBeVisible();
+  await expect(page.locator(".hh-xmb-category.active .hh-system-label")).toBeVisible();
+});
+
+test("Android game channel exposes the second-level emulator platform strip", async ({ page }) => {
+  await page.setViewportSize({ width: 808, height: 454 });
+  await page.goto("/?skip_wizard&platform=android#home");
+  await page.locator(".hh-xmb-category").filter({ hasText: "游戏" }).click();
+  await expect(page.getByTestId("handheld-game-platforms")).toBeVisible();
+  await expect(page.getByTestId("handheld-game-platforms").locator("[data-platform-index]").first()).toBeVisible();
+  await expect(page.getByTestId("handheld-game-wheel")).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("[data-testid='handheld-game-wheel'] [data-game-index]").first()).toBeVisible();
+  await page.keyboard.press("PageDown");
+  await expect(page.locator("[data-testid='handheld-game-platforms'] button.active")).toHaveCount(1);
+});
+
+test("Android XMB channel strip hides after interaction and can be restored", async ({ page }) => {
+  await page.setViewportSize({ width: 808, height: 454 });
+  await page.goto("/?skip_wizard&platform=android#home");
+
+  await page.locator(".hh-xmb-category").filter({ hasText: "漫画" }).click();
+  await expect(page.locator(".hh-xmb-category")).toHaveCount(5);
+  await expect(page.locator(".hh-xmb-category")).toHaveCount(0, { timeout: 3_800 });
+  await expect(page.getByRole("button", { name: "显示掌机频道" })).toBeVisible();
+  await page.getByRole("button", { name: "显示掌机频道" }).click();
+  await expect(page.locator(".hh-xmb-category")).toHaveCount(5);
 });
 
 test("Android home keeps the game library and emulator import as first-class actions", async ({ page }) => {

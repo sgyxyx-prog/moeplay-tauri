@@ -22,23 +22,30 @@
   import { readHandheldImmersivePreference, onHandheldPrefsChanged } from "../../platform/handheld";
   import {
     groupGamesBySystem,
-    buildSections,
+    buildHandheldChannels,
+    buildHandheldGameSystems,
+    handheldViewKey,
+    migrateHandheldMemory,
+    wrappedIndex,
     mergeAnimeItems,
     mergeComicItems,
     buildNovelItems,
     buildHandheldQuickNavGroups,
     sortRecentItems,
+    type HandheldChannelId,
+    type HandheldMemoryV3,
     type HandheldUnifiedItem,
   } from "./systems";
   import { attachGamepad, type GamepadAttachment } from "../../components/switch/useGamepad.svelte";
   import { openUnifiedMediaHistory } from "../media-history/open";
   import Icon from "../../components/Icon.svelte";
   import HandheldRail, { type HandheldRailItem } from "./HandheldRail.svelte";
+  import HandheldGameWheel from "./HandheldGameWheel.svelte";
   import HandheldStatePanel from "./HandheldStatePanel.svelte";
   import HandheldArtworkStage from "./HandheldArtworkStage.svelte";
   import homeAmbient from "../../assets/handheld/home-ambient.webp";
 
-  const MEMORY_KEY = "moeplay-handheld-memory-v2";
+  const MEMORY_KEY = "moeplay-handheld-memory-v3";
 
   /* ---- 数据：游戏系统 + 三类媒体条目 + 「继续」聚合 ---- */
 
@@ -113,20 +120,25 @@
     return sortRecentItems(entries, 16);
   });
 
+  const gameCount = $derived(gameSystems.reduce((total, system) => total + system.games.length, 0));
   const sections = $derived(
-    buildSections({
+    buildHandheldChannels({
       recentCount: recentItems.length,
       animeCount: animeItems.length,
       comicCount: comicItems.length,
       novelCount: novelItems.length,
-      gameSystems: gameSystems.map((s) => ({ id: s.id, label: s.label, count: s.games.length })),
+      gameCount,
     }),
+  );
+  const gameSystemOptions = $derived(
+    buildHandheldGameSystems(gameSystems.map((s) => ({ id: s.id, label: s.label, count: s.games.length }))),
   );
 
   /* ---- 焦点模型：分区索引 + 每分区焦点位置记忆 ---- */
 
   let sectionIdx = $state(0);
   let focusMap = $state<Record<string, number>>({});
+  let gameSystemIdx = $state(0);
   let padConnected = $state(false);
   let launching = $state<string | null>(null);
   let now = $state(new Date());
@@ -134,6 +146,8 @@
   let quickMenuOpen = $state(false);
   let quickMenuIndex = $state(0);
   let welcomeActionIndex = $state(0);
+  let categoryRailVisible = $state(true);
+  let categoryRailHideTimer: number | undefined;
 
   const QUICK_MENU_OVERLAY_ID = "handheld-quick-menu";
   const quickNavGroups = buildHandheldQuickNavGroups();
@@ -147,7 +161,9 @@
   ] as const;
 
   const section = $derived(sections[Math.min(sectionIdx, Math.max(sections.length - 1, 0))] ?? null);
-  const focusIdx = $derived(Math.max(focusMap[section?.id ?? ""] ?? 0, 0));
+  const gameSystemId = $derived(gameSystemOptions[Math.min(gameSystemIdx, Math.max(gameSystemOptions.length - 1, 0))]?.id ?? "all");
+  const focusViewKey = $derived(handheldViewKey(section?.id ?? "recent", gameSystemId));
+  const focusIdx = $derived(Math.max(focusMap[focusViewKey] ?? 0, 0));
   const hasAnyContent = $derived(
     recentItems.length > 0
       || animeItems.length > 0
@@ -161,9 +177,9 @@
   const cells = $derived.by<Cell[]>(() => {
     if (!section) return [];
     if (section.kind === "games") {
-      const games = section.id === "games"
+      const games = gameSystemId === "all"
         ? gameSystems.flatMap((system) => system.games)
-        : gameSystems.find((s) => s.id === section.id)?.games ?? [];
+        : gameSystems.find((s) => s.id === gameSystemId)?.games ?? [];
       return games.map((g) => ({ type: "game", game: g }));
     }
     const list =
@@ -176,6 +192,9 @@
   });
 
   const focusCell = $derived(cells[Math.min(focusIdx, Math.max(cells.length - 1, 0))] ?? null);
+  const gameWheelGames = $derived(
+    cells.filter((cell): cell is { type: "game"; game: Game } => cell.type === "game").map((cell) => cell.game),
+  );
 
   /** 背景铺底：聚焦条目的封面（番剧走本地代理缓存，其余直用）。 */
   const backdropSrc = $derived.by(() => {
@@ -191,6 +210,7 @@
 
   let contentRailEl: HTMLElement | undefined = $state();
   let railEl: HTMLElement | undefined = $state();
+  let gamePlatformRailEl: HTMLElement | undefined = $state();
   let quickMenuEl: HTMLElement | undefined = $state();
   let pad: GamepadAttachment | null = null;
   let immersiveSystemBars = readHandheldImmersivePreference();
@@ -267,6 +287,20 @@
     navigateTo(item.view);
   }
 
+  /**
+   * XMB 频道栏只在切频道时短暂出现，给游戏转盘和媒体主视觉留出更多空间。
+   * LT/RT、键盘 Q/E 或触控点按频道都会重新显示并重新计时；隐藏时保留一个
+   * 轻量恢复按钮，避免纯触控用户失去频道入口。
+   */
+  function revealCategoryRail() {
+    categoryRailVisible = true;
+    if (categoryRailHideTimer !== undefined) window.clearTimeout(categoryRailHideTimer);
+    categoryRailHideTimer = window.setTimeout(() => {
+      categoryRailVisible = false;
+      categoryRailHideTimer = undefined;
+    }, 3000);
+  }
+
   /* ---- 生命周期 ---- */
 
   onMount(() => {
@@ -293,15 +327,24 @@
     document.addEventListener("visibilitychange", onVisibility);
     pad = attachGamepad(
       {
-        left: () => quickMenuOpen ? moveQuickMenu(-1) : switchSection(-1),
-        right: () => quickMenuOpen ? moveQuickMenu(1) : switchSection(1),
-        up: () => quickMenuOpen ? moveQuickMenu(-3) : hasAnyContent ? moveFocus(-gridColumns()) : moveWelcomeAction(-1),
-        down: () => quickMenuOpen ? moveQuickMenu(3) : hasAnyContent ? moveFocus(gridColumns()) : moveWelcomeAction(1),
-        pageLeft: () => quickMenuOpen ? moveQuickMenu(-1) : moveFocus(-1),
-        pageRight: () => quickMenuOpen ? moveQuickMenu(1) : moveFocus(1),
+        left: () => quickMenuOpen ? moveQuickMenu(-1) : moveFocus(-1),
+        right: () => quickMenuOpen ? moveQuickMenu(1) : moveFocus(1),
+        up: () => quickMenuOpen ? moveQuickMenu(-3) : hasAnyContent ? moveFocus(-1) : moveWelcomeAction(-1),
+        down: () => quickMenuOpen ? moveQuickMenu(3) : hasAnyContent ? moveFocus(1) : moveWelcomeAction(1),
+        pageLeft: () => quickMenuOpen ? moveQuickMenu(-1) : section?.id === "games" ? switchGameSystem(-1) : undefined,
+        pageRight: () => quickMenuOpen ? moveQuickMenu(1) : section?.id === "games" ? switchGameSystem(1) : undefined,
+        categoryLeft: () => quickMenuOpen ? moveQuickMenu(-1) : switchSection(-1),
+        categoryRight: () => quickMenuOpen ? moveQuickMenu(1) : switchSection(1),
         activate: () => quickMenuOpen ? activateQuickMenu() : hasAnyContent ? openFocusedDetails() : activateWelcomeAction(),
-        launch: () => quickMenuOpen ? activateQuickMenu() : hasAnyContent ? void openFocused() : activateWelcomeAction(),
+        launch: () => quickMenuOpen
+          ? activateQuickMenu()
+          : section?.id === "games" && cells.length === 0
+            ? navigateTo("handheld-import")
+            : hasAnyContent
+              ? void openFocused()
+              : activateWelcomeAction(),
         favorite: () => favoriteFocused(),
+        filter: () => quickMenuOpen ? closeQuickMenu() : section?.id === "games" ? navigateTo("game-library") : openQuickMenu(),
         back: () => quickMenuOpen ? closeQuickMenu() : navigateTo("home"),
         start: () => quickMenuOpen ? closeQuickMenu() : navigateTo("handheld-import"),
       },
@@ -325,6 +368,7 @@
     }
     return () => {
       clearInterval(timer);
+      if (categoryRailHideTimer !== undefined) window.clearTimeout(categoryRailHideTimer);
       if (focusTimer !== undefined) window.clearTimeout(focusTimer);
       window.removeEventListener("gamepadconnected", onPad);
       window.removeEventListener("gamepaddisconnected", onPad);
@@ -376,9 +420,12 @@
 
   /* ---- 位置记忆 ---- */
 
-  function readMemory(): { section?: string; key?: string } {
+  function readMemory(): unknown {
     try {
-      return JSON.parse(localStorage.getItem(MEMORY_KEY) ?? "{}") as { section?: string; key?: string };
+      const current = localStorage.getItem(MEMORY_KEY);
+      if (current) return JSON.parse(current) as unknown;
+      // 旧版本的 key 仍然读取一次，由 migrateHandheldMemory 统一转换。
+      return JSON.parse(localStorage.getItem("moeplay-handheld-memory-v2") ?? "{}") as unknown;
     } catch {
       return {};
     }
@@ -386,25 +433,35 @@
 
   function persistMemory() {
     try {
-      const key =
-        focusCell?.type === "game" ? focusCell.game.id
-        : focusCell?.type === "media" ? focusCell.item.key
-        : undefined;
-      localStorage.setItem(MEMORY_KEY, JSON.stringify({ section: section?.id, key }));
+      const memory = migrateHandheldMemory(readMemory(), gameSystemOptions.filter((item) => item.id !== "all").map((item) => item.id));
+      const key = focusCell?.type === "game" ? focusCell.game.id : focusCell?.type === "media" ? focusCell.item.key : "";
+      const viewKey = handheldViewKey(section?.id ?? "recent", gameSystemId);
+      memory.channel = (section?.id ?? "recent") as HandheldChannelId;
+      memory.gameSystemId = gameSystemId;
+      memory.focusByView[viewKey] = focusIdx;
+      if (key) memory.keyByView[viewKey] = key;
+      localStorage.setItem(MEMORY_KEY, JSON.stringify(memory));
     } catch {
       /* ignore */
     }
   }
 
-  function restoreMemory(memory: { section?: string; key?: string }) {
-    if (memory.section) {
-      const idx = sections.findIndex((s) => s.id === memory.section);
-      if (idx >= 0) sectionIdx = idx;
-    }
-    if (memory.key && section) {
+  function restoreMemory(raw: unknown) {
+    const memory: HandheldMemoryV3 = migrateHandheldMemory(
+      raw,
+      gameSystemOptions.filter((item) => item.id !== "all").map((item) => item.id),
+    );
+    const channelIndex = sections.findIndex((item) => item.id === memory.channel);
+    if (channelIndex >= 0) sectionIdx = channelIndex;
+    const systemIndex = gameSystemOptions.findIndex((item) => item.id === memory.gameSystemId);
+    if (systemIndex >= 0) gameSystemIdx = systemIndex;
+    focusMap = { ...focusMap, ...memory.focusByView };
+    const viewKey = handheldViewKey(memory.channel, memory.gameSystemId);
+    const key = memory.keyByView[viewKey];
+    if (key) {
       requestAnimationFrame(() => {
         const idx = cells.findIndex((c) =>
-          c.type === "game" ? c.game.id === memory.key : c.item.key === memory.key,
+          c.type === "game" ? c.game.id === key : c.item.key === key,
         );
         if (idx >= 0) setFocus(idx);
       });
@@ -415,7 +472,7 @@
 
   function setFocus(idx: number) {
     if (!section || cells.length === 0) return;
-    focusMap[section.id] = Math.min(Math.max(idx, 0), cells.length - 1);
+    focusMap[focusViewKey] = Math.min(Math.max(idx, 0), cells.length - 1);
   }
 
   function moveFocus(delta: number) {
@@ -428,14 +485,38 @@
 
   function switchSection(delta: number) {
     if (sections.length === 0) return;
-    sectionIdx = (sectionIdx + delta + sections.length) % sections.length;
+    sectionIdx = wrappedIndex(sectionIdx, delta, sections.length);
+    revealCategoryRail();
     persistMemory();
     scrollRailIntoView();
     focusSectionButton();
   }
 
+  function switchGameSystem(delta: number) {
+    if (gameSystemOptions.length === 0) return;
+    persistMemory();
+    gameSystemIdx = wrappedIndex(gameSystemIdx, delta, gameSystemOptions.length);
+    requestAnimationFrame(() => {
+      focusContentCard();
+      scrollFocusIntoView();
+    });
+    persistMemory();
+  }
+
+  function selectGameSystem(index: number) {
+    if (index < 0 || index >= gameSystemOptions.length) return;
+    persistMemory();
+    gameSystemIdx = index;
+    requestAnimationFrame(() => {
+      focusContentCard();
+      scrollFocusIntoView();
+    });
+    persistMemory();
+  }
+
   function selectSection(idx: number) {
     sectionIdx = idx;
+    revealCategoryRail();
     persistMemory();
     focusSectionButton();
   }
@@ -449,14 +530,14 @@
   }
 
   function gridColumns(): number {
-    // 首页内容已收束为横向轨道；上下键仍以单步移动，避免焦点跨列跳跃。
+    // 转盘和媒体轨道都是单轴浏览；上下键也采用单步，方便掌机单手操作。
     return 1;
   }
 
   function scrollFocusIntoView() {
     requestAnimationFrame(() => {
       contentRailEl
-        ?.querySelector(`[data-rail-index="${Math.min(focusIdx, Math.max(cells.length - 1, 0))}"]`)
+        ?.querySelector(`[data-rail-index="${Math.min(focusIdx, Math.max(cells.length - 1, 0))}"], [data-game-index="${Math.min(focusIdx, Math.max(cells.length - 1, 0))}"]`)
         ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
     });
   }
@@ -472,7 +553,7 @@
   function focusContentCard() {
     requestAnimationFrame(() => {
       contentRailEl
-        ?.querySelector<HTMLButtonElement>(`[data-rail-index="${Math.min(focusIdx, Math.max(cells.length - 1, 0))}"]`)
+        ?.querySelector<HTMLButtonElement>(`[data-rail-index="${Math.min(focusIdx, Math.max(cells.length - 1, 0))}"], [data-game-index="${Math.min(focusIdx, Math.max(cells.length - 1, 0))}"]`)
         ?.focus({ preventScroll: true });
     });
   }
@@ -604,15 +685,18 @@
       return;
     }
     switch (normalizedKey) {
-      case "ArrowLeft": switchSection(-1); break;
-      case "ArrowRight": switchSection(1); break;
+      case "ArrowLeft": hasAnyContent ? moveFocus(-1) : moveWelcomeAction(-1); break;
+      case "ArrowRight": hasAnyContent ? moveFocus(1) : moveWelcomeAction(1); break;
       case "ArrowUp": hasAnyContent ? moveFocus(-gridColumns()) : moveWelcomeAction(-1); break;
       case "ArrowDown": hasAnyContent ? moveFocus(gridColumns()) : moveWelcomeAction(1); break;
-      case "PageUp": moveFocus(-1); break;
-      case "PageDown": moveFocus(1); break;
-      case "Enter": hasAnyContent ? void openFocused() : activateWelcomeAction(); break;
+      case "PageUp": section?.id === "games" ? switchGameSystem(-1) : moveFocus(-1); break;
+      case "PageDown": section?.id === "games" ? switchGameSystem(1) : moveFocus(1); break;
+      case "q": case "Q": switchSection(-1); break;
+      case "e": case "E": switchSection(1); break;
+      case "Enter": section?.id === "games" && cells.length === 0 ? navigateTo("handheld-import") : hasAnyContent ? void openFocused() : activateWelcomeAction(); break;
       case "y": case "Y": openFocusedDetails(); break;
       case "f": case "F": favoriteFocused(); break;
+      case "s": case "S": section?.id === "games" ? navigateTo("game-library") : openQuickMenu(); break;
       case "Escape": navigateTo("home"); break;
       default: return;
     }
@@ -669,11 +753,17 @@
   });
   $effect(() => {
     cells.length;
-    if (focusMap[section?.id ?? ""] >= cells.length) setFocus(Math.max(cells.length - 1, 0));
+    if (focusMap[focusViewKey] >= cells.length) setFocus(Math.max(cells.length - 1, 0));
   });
   $effect(() => {
     sectionIdx;
     scrollRailIntoView();
+  });
+  $effect(() => {
+    gameSystemIdx;
+    gamePlatformRailEl
+      ?.querySelector(`[data-platform-index="${gameSystemIdx}"]`)
+      ?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   });
 </script>
 
@@ -700,6 +790,35 @@
         <b>{section?.label ?? "欢迎"}</b>
       </div>
     </div>
+    <!-- 频道与品牌/主屏幕/游戏库/导入同排，横屏时把内容舞台让给当前选择。 -->
+    {#if categoryRailVisible}
+      <nav class="hh-systems hh-xmb-categories" aria-label="掌机频道" bind:this={railEl}>
+        <div class="hh-xmb-category-track">
+          {#each sections as sys, i}
+            <button
+              type="button"
+              class="hh-system hh-xmb-category"
+              class:active={i === sectionIdx}
+              data-sys-idx={i}
+              aria-current={i === sectionIdx ? "page" : undefined}
+              tabindex="-1"
+              onfocus={() => { revealCategoryRail(); if (sectionIdx !== i) { sectionIdx = i; persistMemory(); } }}
+              onclick={() => selectSection(i)}
+            >
+              <span class="hh-xmb-category-icon">
+                {#if SECTION_ICONS[sys.id]}<Icon name={SECTION_ICONS[sys.id]} size={18} />{:else}<span>{sys.label.slice(0, 1)}</span>{/if}
+              </span>
+              <span class="hh-system-label">{sys.label}</span>
+              <span class="hh-system-count">{sys.count}</span>
+            </button>
+          {/each}
+        </div>
+      </nav>
+    {:else}
+      <button type="button" class="hh-xmb-category-reveal" aria-label="显示掌机频道" onclick={revealCategoryRail}>
+        <span>频道</span><b>LT · RT</b>
+      </button>
+    {/if}
     <div class="hh-status">
       <span class="hh-profile">PLAYER 01</span>
       {#if padConnected}<span class="hh-pad-dot" title="手柄已连接"></span>{/if}
@@ -722,29 +841,25 @@
     </div>
   </header>
 
-  <!-- XMB 横向频道：左/右切换栏目，点击也能直接跳转。 -->
-  <nav class="hh-systems hh-xmb-categories" aria-label="掌机频道" bind:this={railEl}>
-    <div class="hh-xmb-category-track">
-      {#each sections as sys, i}
-        <button
-          type="button"
-          class="hh-system hh-xmb-category"
-          class:active={i === sectionIdx}
-          data-sys-idx={i}
-          aria-current={i === sectionIdx ? "page" : undefined}
-          tabindex="-1"
-          onfocus={() => { if (sectionIdx !== i) { sectionIdx = i; persistMemory(); } }}
-          onclick={() => selectSection(i)}
-        >
-          <span class="hh-xmb-category-icon">
-            {#if SECTION_ICONS[sys.id]}<Icon name={SECTION_ICONS[sys.id]} size={22} />{:else}<span>{sys.label.slice(0, 1)}</span>{/if}
-          </span>
-          <span class="hh-system-label">{sys.label}</span>
-          <span class="hh-system-count">{sys.count}</span>
-        </button>
-      {/each}
-    </div>
-  </nav>
+  {#if section?.id === "games"}
+    <nav class="hh-game-platforms" aria-label="模拟器平台" data-testid="handheld-game-platforms">
+      <span class="hh-game-platforms__hint"><b>LB</b><i></i><small>平台</small></span>
+      <div class="hh-game-platforms__track" bind:this={gamePlatformRailEl}>
+        {#each gameSystemOptions as system, i (system.id)}
+          <button
+            type="button"
+            class:active={i === gameSystemIdx}
+            data-platform-index={i}
+            aria-current={i === gameSystemIdx ? "page" : undefined}
+            onclick={() => selectGameSystem(i)}
+          >
+            <strong>{system.label}</strong><small>{system.count}</small>
+          </button>
+        {/each}
+      </div>
+      <span class="hh-game-platforms__hint right"><small>切换</small><i></i><b>RB</b></span>
+    </nav>
+  {/if}
 
   {#if quickMenuOpen}
     <button class="hh-menu-scrim" type="button" aria-label="关闭全部功能" onclick={closeQuickMenu}></button>
@@ -791,7 +906,7 @@
     </dialog>
   {/if}
 
-  {#if !hasAnyContent}
+  {#if !hasAnyContent && section?.id === "recent"}
     <main class="hh-main hh-xmb-main hh-xmb-welcome-main">
       <section class="hh-xmb-welcome" data-testid="handheld-xmb-welcome" aria-label="欢迎使用萌游掌机模式">
         <div class="hh-xmb-welcome-art">
@@ -821,9 +936,11 @@
         </div>
       </section>
     </main>
-  {:else if section && cells.length === 0}
+  {:else if section && cells.length === 0 && section.id !== "games"}
     <div class="hh-empty">
-      {#if section.id === "anime"}
+      {#if section.id === "recent"}
+        <HandheldStatePanel state="empty" compact title="还没有最近活动" description="启动一款游戏，或播放/阅读任意内容后，这里会成为你的继续入口。" primaryAction={{ label: "打开游戏频道", run: () => { selectSection(1); } }} />
+      {:else if section.id === "anime"}
         <HandheldStatePanel state="empty" compact title="暂无番剧活动" description="搜索并播放一集后，记录会自动出现在继续轨道。" primaryAction={{ label: "去看番剧", run: () => { navigateTo("anime"); } }} />
       {:else if section.id === "comic"}
         <HandheldStatePanel state="empty" compact title="暂无漫画活动" description="阅读任意章节后，历史和书架会汇总到这里。" primaryAction={{ label: "去看漫画", run: () => { navigateTo("comic"); } }} />
@@ -837,7 +954,21 @@
     <main class="hh-main hh-xmb-main">
       {#key section?.id}
         <div class="hh-stage hh-xmb-stage">
-          {#if focusCell}
+          {#if section?.id === "games"}
+            <div class="hh-game-stage" bind:this={contentRailEl}>
+              <HandheldGameWheel
+                games={gameWheelGames}
+                focusIdx={focusIdx}
+                platformLabel={gameSystemOptions[gameSystemIdx]?.label ?? "全部游戏"}
+                launching={launching}
+                onSelect={(index) => { setFocus(index); persistMemory(); }}
+                onActivate={() => void openFocused()}
+                onFavorite={() => favoriteFocused()}
+                onOpenImport={() => navigateTo("handheld-import")}
+                onOpenLibrary={() => navigateTo("game-library")}
+              />
+            </div>
+          {:else if focusCell}
             <section class="hh-xmb-selection" data-testid="handheld-xmb-selection" aria-label="当前选择">
               <div class="hh-xmb-selected-art">
                 <div class="hh-xmb-art-frame">
@@ -880,16 +1011,18 @@
               </aside>
             </section>
           {/if}
-          <div class="hh-xmb-rail-wrap" bind:this={contentRailEl}>
-            <HandheldRail
-              title={section?.label ?? "内容"}
-              kicker={section?.kind === "games" ? "GAME LIBRARY" : section?.id === "recent" ? "CONTINUE" : "MEDIA CHANNEL"}
-              items={railItems}
-              activeIndex={focusIdx}
-              onSelect={(_, index) => { setFocus(index); persistMemory(); }}
-              onOpen={() => void openFocused()}
-            />
-          </div>
+          {#if section?.id !== "games"}
+            <div class="hh-xmb-rail-wrap" bind:this={contentRailEl}>
+              <HandheldRail
+                title={section?.label ?? "内容"}
+                kicker={section?.id === "recent" ? "CONTINUE" : "MEDIA CHANNEL"}
+                items={railItems}
+                activeIndex={focusIdx}
+                onSelect={(_, index) => { setFocus(index); persistMemory(); }}
+                onOpen={() => void openFocused()}
+              />
+            </div>
+          {/if}
         </div>
       {/key}
     </main>
@@ -897,11 +1030,11 @@
   {/if}
   <!-- 底部手柄提示条：空态、加载态也始终告诉用户如何操作。 -->
   <footer class="hh-hints hh-xmb-hints">
-    <span><b class="k">← →</b>频道</span>
-    <span><b class="k">↑ ↓</b>{hasAnyContent ? "选择" : "入口"}</span>
+    <span><b class="k">LT·RT</b>频道</span>
+    <span><b class="k">← →</b>{hasAnyContent ? "选择" : "入口"}</span>
     {#if !hasAnyContent}
       <span><b class="k">A</b>打开</span>
-    {:else if section?.kind === "games"}
+    {:else if section?.id === "games"}
       <span><b class="k">A</b>启动</span>
       <span><b class="k">X</b>收藏</span>
     {:else if section?.id === "anime"}
@@ -912,7 +1045,8 @@
     {:else}
       <span><b class="k">A</b>打开</span>
     {/if}
-    <span><b class="k">LB·RB</b>快速选</span>
+    {#if section?.id === "games"}<span><b class="k">LB·RB</b>平台</span>{/if}
+    <span><b class="k">VIEW</b>游戏库</span>
     <span><b class="k">START</b>导入</span>
     <span><b class="k">B</b>返回</span>
   </footer>
@@ -1082,6 +1216,13 @@
     .hh-system-count { padding-inline: 5px; font-size: .6rem; }
     .hh-status { gap: 6px; }
     .hh-clock { display: none; }
+    .hh-xmb-page .hh-status .hh-profile { display: none; }
+    .hh-xmb-page .hh-xmb-context { display: flex; align-items: center; gap: 4px; min-width: 0; padding-left: 8px; border-left-width: 1px; font-size: .5rem; letter-spacing: .08em; }
+    .hh-xmb-page .hh-xmb-context b { font-size: .62rem; }
+    .hh-xmb-page .hh-status .hh-import-btn { width: auto; min-width: 36px; justify-content: center; padding-inline: 7px; font-size: .62rem; }
+    .hh-xmb-page .hh-status .hh-import-btn span { display: inline; }
+    .hh-xmb-page .hh-status > .hh-import-btn:not(.hh-home-shortcut) { width: 36px; padding-inline: 6px; }
+    .hh-xmb-page .hh-status > .hh-import-btn:not(.hh-home-shortcut) span { display: none; }
     .hh-main { grid-template-columns: minmax(0, 1fr) 270px; gap: 12px; }
     .hh-menu-panel { right: max(10px, env(safe-area-inset-right)); left: auto; width: min(780px, calc(100vw - 20px)); }
     .hh-menu-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -1092,6 +1233,8 @@
     .hh-mode { font-size: .5rem; }
     .hh-main { padding-top: 3px; padding-bottom: 5px; }
     .hh-stage { gap: 6px; }
+    .hh-xmb-selection { grid-template-columns: minmax(120px, 20%) minmax(0, 1fr) 126px; min-height: 150px; max-height: min(230px, 46dvh); padding-block: 10px; gap: 14px; }
+    .hh-xmb-art-frame { width: min(136px, 100%); height: min(176px, 38dvh); }
     .hh-hints { gap: 10px; padding-block: 5px; font-size: .62rem; }
     .hh-hints .k { min-width: 18px; padding-inline: 5px; }
     .hh-menu-panel {
@@ -1124,15 +1267,15 @@
   }
   /* AIR_X 等窄横屏把主导航独占首行，避免被中间的内容分区轨道挤出视口。 */
   @media (orientation: landscape) and (max-width: 900px) {
-    .hh-topbar { grid-template-columns: minmax(0, 1fr) auto; }
+    .hh-xmb-page .hh-xmb-topbar { grid-template-columns: max-content minmax(0, 1fr) max-content; }
     .hh-brand { min-width: 0; }
-    .hh-systems { grid-column: 1 / -1; grid-row: 2; }
-    .hh-status { grid-column: 2; grid-row: 1; }
+    .hh-xmb-page .hh-status { grid-column: auto; grid-row: auto; }
+    .hh-xmb-page .hh-xmb-category-track { justify-content: start; }
   }
   @media (max-width: 720px) {
-    .hh-topbar { grid-template-columns: minmax(0, 1fr) auto; }
-    .hh-systems { grid-column: 1 / -1; grid-row: 2; }
-    .hh-status { grid-column: 2; grid-row: 1; }
+    .hh-xmb-page .hh-xmb-topbar { grid-template-columns: max-content minmax(0, 1fr) max-content; }
+    .hh-xmb-page .hh-status { grid-column: auto; grid-row: auto; }
+    .hh-xmb-page .hh-xmb-category-track { justify-content: start; }
     .hh-main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -1165,30 +1308,38 @@
   .hh-xmb-scanlines { opacity: .065; background: repeating-linear-gradient(180deg, transparent 0 3px, rgb(255 255 255 / .045) 3px 4px); }
 
   .hh-xmb-page .hh-xmb-topbar {
-    position: relative; z-index: 4; display: flex; align-items: center; justify-content: space-between;
-    gap: 24px; flex: 0 0 auto; min-height: 62px; padding: max(12px, env(safe-area-inset-top)) var(--hh-pad) 10px;
+    position: relative; z-index: 4; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+    gap: clamp(8px, 1.4vw, 20px); flex: 0 0 auto; min-height: 62px; padding: max(12px, env(safe-area-inset-top)) var(--hh-pad) 10px;
     border-bottom: 1px solid var(--xmb-line);
     background: linear-gradient(180deg, rgb(5 7 12 / .74), rgb(5 7 12 / .2));
   }
-  .hh-xmb-page .hh-brand { align-items: center; gap: 22px; }
+  .hh-xmb-page .hh-brand { align-items: center; gap: clamp(10px, 1.4vw, 22px); }
   .hh-xmb-page .hh-brand-home { min-width: 106px; }
   .hh-xmb-page .hh-logo { font-size: 1.35rem; letter-spacing: .06em; text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent); }
   .hh-xmb-page .hh-mode { letter-spacing: .22em; }
   .hh-xmb-context { display: grid; gap: 4px; min-width: 110px; padding-left: 20px; border-left: 1px solid var(--xmb-line); color: var(--text-muted); font: 600 .62rem/1 var(--font-mono); letter-spacing: .12em; }
   .hh-xmb-context b { color: var(--text-primary); font: 750 .86rem/1 var(--font-ui); letter-spacing: 0; }
-  .hh-xmb-page .hh-status { flex: 0 0 auto; gap: 12px; }
+  .hh-xmb-page .hh-status { grid-column: auto; grid-row: auto; min-width: max-content; flex: 0 0 auto; gap: 12px; }
   .hh-profile { color: var(--text-muted); font: 700 .58rem/1 var(--font-mono); letter-spacing: .12em; }
   .hh-xmb-page .hh-import-btn { min-height: 38px; border-radius: 8px; background: rgb(255 255 255 / .06); }
 
   .hh-xmb-page .hh-xmb-categories {
-    position: relative; z-index: 3; display: block; flex: 0 0 auto; overflow: hidden; padding: 14px var(--hh-pad) 12px;
-    border-bottom: 1px solid var(--xmb-line); mask-image: none; background: linear-gradient(180deg, rgb(5 7 12 / .38), transparent);
+    position: relative; z-index: 3; grid-column: auto; grid-row: auto; display: block; min-width: 0; overflow: hidden; padding: 0;
+    border: 0; mask-image: none; background: transparent;
   }
-  .hh-xmb-category-track { display: flex; align-items: end; gap: 10px; min-width: max-content; width: max-content; margin: 0 auto; }
+  .hh-xmb-category-track { display: flex; align-items: center; justify-content: center; gap: clamp(3px, .7vw, 10px); min-width: 0; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .hh-xmb-category-track::-webkit-scrollbar { display: none; }
+  .hh-xmb-category-reveal {
+    position: relative; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 7px;
+    min-width: 68px; min-height: 36px; padding: 3px 8px; border: 1px solid var(--xmb-line); border-radius: 7px;
+    background: rgb(2 4 7 / .88); color: var(--text-muted); font: 700 .58rem/1 var(--font-mono); letter-spacing: .1em; cursor: pointer;
+  }
+  .hh-xmb-category-reveal b { color: var(--accent-hi); font-weight: 800; }
+  .hh-xmb-category-reveal:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: -2px; }
   .hh-xmb-page .hh-xmb-category {
-    position: relative; display: grid; grid-template-rows: 42px auto auto; justify-items: center; gap: 5px;
-    width: 82px; min-width: 82px; min-height: 78px; padding: 7px 6px 6px; border: 1px solid transparent; border-radius: 10px;
-    background: transparent; color: var(--text-muted); font-size: .72rem; cursor: pointer;
+    position: relative; display: grid; grid-template-columns: 30px minmax(0, auto); grid-template-rows: auto auto; align-items: center; justify-items: start; column-gap: 6px; row-gap: 2px;
+    width: clamp(68px, 7.2vw, 88px); min-width: 68px; min-height: 44px; padding: 5px 6px; border: 1px solid transparent; border-radius: 8px;
+    background: transparent; color: var(--text-muted); font-size: .68rem; cursor: pointer;
     transition: transform .2s ease, border-color .2s ease, background .2s ease, color .2s ease, box-shadow .2s ease;
   }
   .hh-xmb-page .hh-xmb-category:hover { color: var(--text-primary); border-color: var(--xmb-line); background: rgb(255 255 255 / .035); }
@@ -1198,11 +1349,28 @@
     box-shadow: 0 10px 30px rgb(0 0 0 / .2), 0 0 0 1px color-mix(in srgb, var(--accent-hi) 24%, transparent) inset;
     transform: translateY(-3px) scale(1.035);
   }
-  .hh-xmb-category.active::after { position: absolute; right: 22px; bottom: -13px; left: 22px; height: 3px; content: ""; background: var(--xmb-highlight); box-shadow: 0 0 12px var(--accent); }
-  .hh-xmb-category-icon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--xmb-line); border-radius: 9px; background: rgb(4 6 10 / .46); color: var(--text-secondary); font: 800 1.2rem/1 var(--font-display); }
+  .hh-xmb-category.active::after { position: absolute; right: 8px; bottom: -6px; left: 8px; height: 2px; content: ""; background: var(--xmb-highlight); box-shadow: 0 0 12px var(--accent); }
+  .hh-xmb-category-icon { display: grid; place-items: center; grid-row: 1 / -1; width: 30px; height: 30px; border: 1px solid var(--xmb-line); border-radius: 7px; background: rgb(4 6 10 / .46); color: var(--text-secondary); font: 800 .92rem/1 var(--font-display); }
   .hh-xmb-category.active .hh-xmb-category-icon { border-color: color-mix(in srgb, var(--accent-hi) 70%, transparent); background: color-mix(in srgb, var(--accent) 22%, var(--bg-elev)); color: var(--accent-hi); box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 22%, transparent); }
-  .hh-xmb-page .hh-xmb-category .hh-system-count { padding: 2px 6px; background: rgb(255 255 255 / .08); color: var(--text-muted); font-size: .56rem; }
+  .hh-xmb-page .hh-xmb-category .hh-system-label { overflow: hidden; max-width: 100%; text-overflow: ellipsis; white-space: nowrap; }
+  .hh-xmb-page .hh-xmb-category .hh-system-count { padding: 2px 5px; background: rgb(255 255 255 / .08); color: var(--text-muted); font-size: .52rem; }
   .hh-xmb-page .hh-xmb-category.active .hh-system-count { background: var(--accent); color: #fff; }
+
+  .hh-game-platforms {
+    position: relative; z-index: 3; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 0 auto;
+    padding: 5px var(--hh-pad); border-bottom: 1px solid var(--xmb-line); background: rgb(5 7 12 / .46);
+  }
+  .hh-game-platforms__hint { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; color: var(--text-muted); font: 700 8px/1 var(--font-mono); letter-spacing: .12em; }
+  .hh-game-platforms__hint b { display: grid; min-width: 25px; height: 20px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 44%, transparent); border-radius: 5px; color: var(--accent-hi); background: rgb(255 255 255 / .05); }
+  .hh-game-platforms__hint i { width: 14px; height: 1px; background: var(--xmb-line); }
+  .hh-game-platforms__track { display: flex; min-width: 0; flex: 1; gap: 5px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .hh-game-platforms__track::-webkit-scrollbar { display: none; }
+  .hh-game-platforms__track button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-muted); white-space: nowrap; cursor: pointer; scroll-snap-align: center; }
+  .hh-game-platforms__track button strong { font-size: .66rem; }
+  .hh-game-platforms__track button small { min-width: 14px; padding: 2px 4px; border-radius: 4px; background: rgb(255 255 255 / .06); color: var(--text-muted); font: 700 .55rem/1 var(--font-mono); }
+  .hh-game-platforms__track button.active { border-color: color-mix(in srgb, var(--accent) 68%, transparent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text-primary); box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 15%, transparent); }
+  .hh-game-platforms__track button.active small { background: var(--accent); color: #fff; }
+  .hh-game-stage { flex: 1; min-height: 0; overflow: hidden; }
 
   .hh-xmb-page .hh-xmb-main {
     position: relative; z-index: 2; display: block; flex: 1; min-height: 0; padding: 10px var(--hh-pad) 5px;
@@ -1210,13 +1378,13 @@
   .hh-xmb-page .hh-xmb-stage { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; animation: hh-xmb-enter .26s ease-out; }
   @keyframes hh-xmb-enter { from { opacity: .65; transform: translateY(5px); } to { opacity: 1; transform: none; } }
   .hh-xmb-selection {
-    display: grid; grid-template-columns: minmax(82px, 15%) minmax(0, 1fr) 154px; align-items: center; gap: clamp(14px, 2.5vw, 30px);
-    flex: 1 1 auto; min-height: 166px; max-height: min(286px, 47dvh); padding: 18px clamp(14px, 2.6vw, 34px);
+    display: grid; grid-template-columns: minmax(132px, 18%) minmax(0, 1fr) 154px; align-items: center; gap: clamp(14px, 2.5vw, 30px);
+    flex: 1 1 auto; min-height: 190px; max-height: min(344px, 55dvh); padding: 14px clamp(14px, 2.6vw, 34px);
     border-top: 1px solid var(--xmb-line); border-bottom: 1px solid var(--xmb-line);
     background: linear-gradient(100deg, rgb(8 10 16 / .72), color-mix(in srgb, var(--accent) 8%, transparent) 58%, rgb(8 10 16 / .38));
   }
   .hh-xmb-selected-art { display: grid; justify-items: center; align-content: center; gap: 8px; min-width: 0; }
-  .hh-xmb-art-frame { position: relative; display: grid; place-items: center; width: min(112px, 100%); height: min(166px, 31dvh); overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent-hi) 70%, transparent); background: linear-gradient(145deg, rgb(255 255 255 / .1), rgb(0 0 0 / .26)); box-shadow: 7px 7px 0 rgb(0 0 0 / .16), 0 0 28px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .hh-xmb-art-frame { position: relative; display: grid; place-items: center; width: min(150px, 100%); height: min(220px, 43dvh); overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent-hi) 70%, transparent); background: linear-gradient(145deg, rgb(255 255 255 / .1), rgb(0 0 0 / .26)); box-shadow: 7px 7px 0 rgb(0 0 0 / .16), 0 0 28px color-mix(in srgb, var(--accent) 22%, transparent); }
   .hh-xmb-art-frame::before { position: absolute; inset: 5px; border: 1px solid rgb(255 255 255 / .16); content: ""; pointer-events: none; }
   .hh-xmb-art-frame img { width: 100%; height: 100%; object-fit: cover; }
   .hh-xmb-art-gloss { position: absolute; inset: 0; background: linear-gradient(125deg, rgb(255 255 255 / .14), transparent 22% 72%, rgb(0 0 0 / .22)); pointer-events: none; }

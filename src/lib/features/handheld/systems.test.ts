@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   buildNovelItems,
+  buildHandheldChannels,
+  buildHandheldGameSystems,
   buildSections,
   buildHandheldQuickNavGroups,
   groupGamesBySystem,
   mergeAnimeItems,
   mergeComicItems,
+  migrateHandheldMemory,
   normalizePlatform,
   platformLabel,
   resolveEmulatorAssignments,
   sortRecentItems,
+  wrappedIndex,
 } from "./systems";
 
 describe("handheld systems grouping", () => {
@@ -84,6 +88,47 @@ describe("handheld emulator assignment", () => {
 });
 
 describe("handheld full-content sections", () => {
+  it("keeps the first-level handheld channels stable, including empty channels", () => {
+    const channels = buildHandheldChannels({ recentCount: 0, gameCount: 3, animeCount: 0, comicCount: 2, novelCount: 0 });
+    expect(channels.map((channel) => channel.id)).toEqual(["recent", "games", "anime", "comic", "novel"]);
+    expect(channels.map((channel) => channel.count)).toEqual([0, 3, 0, 2, 0]);
+  });
+
+  it("builds the all-games option followed by populated emulator systems", () => {
+    expect(buildHandheldGameSystems([
+      { id: "psp", label: "PSP", count: 4 },
+      { id: "empty", label: "Empty", count: 0 },
+      { id: "gba", label: "GBA", count: 2 },
+    ])).toEqual([
+      { id: "all", label: "全部游戏", count: 6 },
+      { id: "psp", label: "PSP", count: 4 },
+      { id: "gba", label: "GBA", count: 2 },
+    ]);
+  });
+
+  it("wraps channel and platform selection without producing invalid indices", () => {
+    expect(wrappedIndex(0, -1, 5)).toBe(4);
+    expect(wrappedIndex(4, 1, 5)).toBe(0);
+    expect(wrappedIndex(0, 1, 0)).toBe(0);
+  });
+
+  it("migrates legacy platform and item memory into the two-level model", () => {
+    expect(migrateHandheldMemory({ section: "psp", key: "game-7" }, ["psp", "gba"])).toEqual({
+      version: 3,
+      channel: "games",
+      gameSystemId: "psp",
+      focusByView: {},
+      keyByView: { "games:psp": "game-7" },
+    });
+    expect(migrateHandheldMemory({ section: "comic", key: "comic-1" }, ["psp"])).toEqual({
+      version: 3,
+      channel: "comic",
+      gameSystemId: "all",
+      focusByView: {},
+      keyByView: { comic: "comic-1" },
+    });
+  });
+
   it("merges anime history with collection, dedup by name, time desc", () => {
     const items = mergeAnimeItems(
       [

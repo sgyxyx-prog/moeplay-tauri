@@ -392,6 +392,128 @@ export interface HandheldSectionMeta {
   count: number;
 }
 
+/** Android 首页的第一层频道，顺序固定以避免加载/空态造成焦点漂移。 */
+export type HandheldChannelId = "recent" | "games" | "anime" | "comic" | "novel";
+
+export interface HandheldChannelMeta {
+  id: HandheldChannelId;
+  label: string;
+  kind: HandheldSectionKind;
+  count: number;
+}
+
+export interface HandheldGameSystemOption {
+  /** all 表示全部游戏平台，其他值为规范化平台 id。 */
+  id: string;
+  label: string;
+  count: number;
+}
+
+export interface HandheldMemoryV3 {
+  version: 3;
+  channel: HandheldChannelId;
+  gameSystemId: string;
+  focusByView: Record<string, number>;
+  keyByView: Record<string, string>;
+}
+
+const CHANNEL_IDS: readonly HandheldChannelId[] = ["recent", "games", "anime", "comic", "novel"];
+
+export function isHandheldChannelId(value: unknown): value is HandheldChannelId {
+  return typeof value === "string" && CHANNEL_IDS.includes(value as HandheldChannelId);
+}
+
+/** 构造稳定的第一层频道；空频道保留，由页面展示空态而不是改变索引。 */
+export function buildHandheldChannels(opts: {
+  recentCount: number;
+  animeCount: number;
+  comicCount: number;
+  novelCount: number;
+  gameCount: number;
+}): HandheldChannelMeta[] {
+  return [
+    { id: "recent", label: "继续", kind: "recent", count: Math.max(0, opts.recentCount) },
+    { id: "games", label: "游戏", kind: "games", count: Math.max(0, opts.gameCount) },
+    { id: "anime", label: "番剧", kind: "media", count: Math.max(0, opts.animeCount) },
+    { id: "comic", label: "漫画", kind: "media", count: Math.max(0, opts.comicCount) },
+    { id: "novel", label: "小说", kind: "media", count: Math.max(0, opts.novelCount) },
+  ];
+}
+
+/** 游戏频道第二层平台：全部游戏 + 有内容的平台，空平台不进入循环。 */
+export function buildHandheldGameSystems(
+  systems: { id: string; label: string; count: number }[],
+): HandheldGameSystemOption[] {
+  const total = systems.reduce((sum, system) => sum + Math.max(0, system.count), 0);
+  return [
+    { id: "all", label: "全部游戏", count: total },
+    ...systems
+      .filter((system) => system.count > 0)
+      .map((system) => ({ id: system.id, label: system.label, count: system.count })),
+  ];
+}
+
+export function wrappedIndex(index: number, delta: number, length: number): number {
+  if (length <= 0) return 0;
+  return (index + delta + length * 2) % length;
+}
+
+export function handheldViewKey(channel: HandheldChannelId, gameSystemId = "all"): string {
+  return channel === "games" ? `games:${gameSystemId}` : channel;
+}
+
+/** 将旧版 section/key 记忆迁移到双层频道模型；无效内容安全回退到继续频道。 */
+export function migrateHandheldMemory(
+  raw: unknown,
+  gameSystemIds: string[],
+): HandheldMemoryV3 {
+  const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const knownSystems = new Set(["all", ...gameSystemIds]);
+  let channel: HandheldChannelId = "recent";
+  let gameSystemId = "all";
+  let viewKey = "recent";
+
+  if (value.version === 3 && isHandheldChannelId(value.channel)) {
+    channel = value.channel;
+    gameSystemId = typeof value.gameSystemId === "string" && knownSystems.has(value.gameSystemId)
+      ? value.gameSystemId
+      : "all";
+    viewKey = handheldViewKey(channel, gameSystemId);
+  } else {
+    const legacySection = typeof value.section === "string" ? value.section : "";
+    if (legacySection === "games") {
+      channel = "games";
+    } else if (isHandheldChannelId(legacySection)) {
+      channel = legacySection;
+    } else if (knownSystems.has(legacySection)) {
+      channel = "games";
+      gameSystemId = legacySection;
+    }
+    viewKey = handheldViewKey(channel, gameSystemId);
+  }
+
+  const focusByView: Record<string, number> = {};
+  const keyByView: Record<string, string> = {};
+  if (value.version === 3) {
+    const storedFocus = value.focusByView;
+    if (storedFocus && typeof storedFocus === "object") {
+      for (const [key, index] of Object.entries(storedFocus as Record<string, unknown>)) {
+        if (typeof index === "number" && Number.isFinite(index)) focusByView[key] = Math.max(0, Math.floor(index));
+      }
+    }
+    const storedKeys = value.keyByView;
+    if (storedKeys && typeof storedKeys === "object") {
+      for (const [key, itemKey] of Object.entries(storedKeys as Record<string, unknown>)) {
+        if (typeof itemKey === "string" && itemKey) keyByView[key] = itemKey;
+      }
+    }
+  } else if (typeof value.key === "string" && value.key) {
+    keyByView[viewKey] = value.key;
+  }
+
+  return { version: 3, channel, gameSystemId, focusByView, keyByView };
+}
+
 /**
  * 轮播分区序列：继续（非空才显示）→ 游戏 → 番剧 → 漫画 → 小说 → 游戏平台（按数量降序，来自调用方）。
  */

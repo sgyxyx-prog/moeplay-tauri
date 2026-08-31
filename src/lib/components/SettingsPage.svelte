@@ -127,6 +127,8 @@
     activate: "档案 / 激活",
     pageLeft: "左翻页",
     pageRight: "右翻页",
+    categoryLeft: "上一级频道",
+    categoryRight: "下一级频道",
     filter: "筛选",
     start: "开始 / 大屏",
   };
