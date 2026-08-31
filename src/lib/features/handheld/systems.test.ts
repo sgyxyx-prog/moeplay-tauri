@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildNovelItems,
+  buildSections,
+  buildHandheldQuickNavGroups,
   groupGamesBySystem,
+  mergeAnimeItems,
+  mergeComicItems,
   normalizePlatform,
   platformLabel,
   resolveEmulatorAssignments,
+  sortRecentItems,
 } from "./systems";
 
 describe("handheld systems grouping", () => {
@@ -74,5 +80,107 @@ describe("handheld emulator assignment", () => {
     ]);
     expect(result.assignments["nes"]).toBe("org.ppsspp.ppsspp");
     expect(result.fallback).toContain("nes");
+  });
+});
+
+describe("handheld full-content sections", () => {
+  it("merges anime history with collection, dedup by name, time desc", () => {
+    const items = mergeAnimeItems(
+      [
+        { key: "k1", name: "葬送的芙莉莲", image: "a.jpg", lastEpisodeName: "第 8 集", updatedAt: "2026-08-28T10:00:00Z" },
+        { key: "k2", name: "老友记", image: "b.jpg", lastEpisodeName: "第 1 集", updatedAt: "2026-08-20T10:00:00Z" },
+      ],
+      [
+        { name: "葬送的芙莉莲", image: "a.jpg", collectType: 1, updatedAt: "2026-08-29T00:00:00Z" },
+        { name: "星际牛仔", image: "c.jpg", collectType: 2, updatedAt: "2026-08-25T00:00:00Z" },
+      ],
+    );
+    expect(items.map((i) => i.title)).toEqual(["葬送的芙莉莲", "星际牛仔", "老友记"]);
+    expect(items[0].fromHistory).toBe(true);
+    expect(items[1].fromHistory).toBe(false);
+    expect(items[1].subtitle).toBe("想看");
+    expect(items[0].subtitle).toBe("第 8 集");
+  });
+
+  it("merges comic history with favorites, history first", () => {
+    const items = mergeComicItems(
+      [{ id: "m1", title: "航海王", thumb_url: "t.jpg", last_title: "第 1100 话", ts: 1756400000000 }],
+      [
+        { id: "m1", title: "航海王", thumb_url: "t.jpg" },
+        { id: "m2", title: "进击的巨人", thumb_url: "g.jpg", author: "谏山创" },
+      ],
+    );
+    expect(items.map((i) => i.key)).toEqual(["m1", "m2"]);
+    expect(items[0].subtitle).toBe("第 1100 话");
+    expect(items[1].subtitle).toBe("谏山创");
+    expect(items[1].fromHistory).toBe(false);
+  });
+
+  it("builds novel items with chapter + progress subtitle", () => {
+    const items = buildNovelItems([
+      { key: "n1", title: "诡秘之主", chapterTitle: "第 100 章", progress: 0.42, updatedAt: 1756400000000 },
+      { key: "n2", title: "三体", chapterTitle: null, progress: 0, updatedAt: 1756300000000 },
+    ]);
+    expect(items[0].subtitle).toBe("第 100 章 · 42%");
+    expect(items[1].subtitle).toBe("");
+    expect(items[0].cover).toBe("");
+  });
+
+  it("sorts recent items by time desc and applies limit", () => {
+    const items = sortRecentItems(
+      [
+        { kind: "game", key: "g1", title: "老滚", cover: "", subtitle: "", time: 100, fromHistory: true },
+        { kind: "anime", key: "a1", title: "番 A", cover: "", subtitle: "", time: 300, fromHistory: true },
+        { kind: "comic", key: "c1", title: "漫 B", cover: "", subtitle: "", time: 200, fromHistory: true },
+      ],
+      2,
+    );
+    expect(items.map((i) => i.kind)).toEqual(["anime", "comic"]);
+  });
+
+  it("builds section order: recent → media trio → game systems; recent hidden when empty", () => {
+    const withRecent = buildSections({
+      recentCount: 3,
+      animeCount: 2,
+      comicCount: 0,
+      novelCount: 0,
+      gameSystems: [
+        { id: "psp", label: "PSP", count: 40 },
+        { id: "gba", label: "GBA", count: 12 },
+      ],
+    });
+    expect(withRecent.map((s) => s.id)).toEqual(["recent", "games", "anime", "comic", "novel", "psp", "gba"]);
+    expect(withRecent[0].kind).toBe("recent");
+    expect(withRecent[1].kind).toBe("games");
+    expect(withRecent[2].kind).toBe("media");
+    expect(withRecent[5].kind).toBe("games");
+
+    const withoutRecent = buildSections({
+      recentCount: 0,
+      animeCount: 0,
+      comicCount: 0,
+      novelCount: 0,
+      gameSystems: [],
+    });
+    expect(withoutRecent.map((s) => s.id)).toEqual(["anime", "comic", "novel"]);
+  });
+});
+
+describe("handheld quick navigation", () => {
+  it("exposes every user-facing content, tool, import, and system route once", () => {
+    const groups = buildHandheldQuickNavGroups();
+    const views = groups.flatMap((group) => group.items.map((item) => item.view));
+
+    expect(groups.map((group) => group.id)).toEqual(["content", "tools", "system"]);
+    expect(new Set(views).size).toBe(views.length);
+    expect(views).toEqual(expect.arrayContaining([
+      "home", "game-library", "records", "anime", "comic", "novel",
+      "continue", "discovery", "scraper", "tasks", "sources", "downloads",
+      "backup", "stats", "handheld-import", "steam-import", "emulator",
+      "diagnostics", "settings",
+    ]));
+    expect(views).not.toContain("__tools");
+    expect(views).not.toContain("__bigpicture");
+    expect(views).not.toContain("handheld");
   });
 });

@@ -35,10 +35,11 @@ describe("runtime platform capabilities", () => {
     expect(isViewSupportedOnPlatform("anime", android)).toBe(true);
     expect(isViewSupportedOnPlatform("novel", android)).toBe(true);
     expect(isViewSupportedOnPlatform("settings", android)).toBe(true);
-    expect(isViewSupportedOnPlatform("steam-import", android)).toBe(false);
-    expect(isViewSupportedOnPlatform("emulator", android)).toBe(false);
+    expect(isViewSupportedOnPlatform("steam-import", android)).toBe(true);
+    expect(isViewSupportedOnPlatform("emulator", android)).toBe(true);
     expect(isViewSupportedOnPlatform("handheld", android)).toBe(true);
     expect(isViewSupportedOnPlatform("handheld-import", android)).toBe(true);
-    expect(isViewSupportedOnPlatform("diagnostics", android)).toBe(false);
+    expect(isViewSupportedOnPlatform("diagnostics", android)).toBe(true);
+    expect(isViewSupportedOnPlatform("anime-player", android)).toBe(false);
   });
 });

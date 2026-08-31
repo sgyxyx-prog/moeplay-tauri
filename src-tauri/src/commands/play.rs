@@ -300,17 +300,30 @@ pub fn launch_game(
 ) -> Result<LaunchResult, String> {
     let game = db.get_game(&id)?;
 
-    // Android 掌机：android-intent:// 启动信息 → 通过 handheld 插件向模拟器应用发 Intent。
+    // Android 掌机：android-intent:// 启动信息 → 解析平台候选链，经 handheld 插件
+    // 按序尝试「直进游戏」的 Intent（RetroArch 核心 / 独立模拟器 VIEW / 主界面兜底）。
     #[cfg(target_os = "android")]
     if let Some(uri) = game.launch_uri.as_deref() {
         if let Some((package, rom_path)) = crate::commands::handheld::parse_android_intent_uri(uri)
         {
             use tauri_plugin_handheld::HandheldExt;
+            let candidates = crate::commands::handheld::resolve_launch_candidates(
+                game.game_type.as_deref().unwrap_or(""),
+                &rom_path,
+                &package,
+            );
+            if candidates.is_empty() {
+                return Err(format!(
+                    "该平台暂不支持直接启动: {}",
+                    game.game_type.as_deref().unwrap_or("未知平台")
+                ));
+            }
             let session_id = db.start_play_session(&id)?;
             let launch_result =
                 app_handle.handheld_launch_game(tauri_plugin_handheld::LaunchGameRequest {
                     package_name: package.clone(),
                     rom_path,
+                    candidates,
                 });
             let _ = db.end_play_session(&id, &session_id, 0);
             return match launch_result {

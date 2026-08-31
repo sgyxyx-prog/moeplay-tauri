@@ -4,6 +4,7 @@ const COMMANDS: &[&str] = &[
     "has_all_files_access",
     "request_all_files_access",
     "discover_rom_roots",
+    "set_system_bars",
 ];
 
 fn main() {

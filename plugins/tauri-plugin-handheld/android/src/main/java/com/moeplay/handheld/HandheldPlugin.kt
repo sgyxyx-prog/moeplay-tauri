@@ -2,6 +2,7 @@ package com.moeplay.handheld
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,6 +11,9 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.Settings
 import android.webkit.MimeTypeMap
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import androidx.core.content.FileProvider
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -19,11 +23,17 @@ import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
+import org.json.JSONObject
 
 @InvokeArg
 class LaunchGameArgs {
-    lateinit var packageName: String
+    var packageName: String = ""
     lateinit var romPath: String
+}
+
+@InvokeArg
+class SystemBarsArgs {
+    var immersive: Boolean = true
 }
 
 /**
@@ -150,25 +160,77 @@ class HandheldPlugin(private val activity: Activity) : Plugin(activity) {
                 return
             }
 
-            val authority = activity.packageName + ".fileprovider"
-            val romUri = FileProvider.getUriForFile(activity, authority, romFile)
-            val extension = romFile.extension.lowercase()
-            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-                ?: "application/octet-stream"
-
-            // 策略 1：ACTION_VIEW 定向 intent —— 多数模拟器（PPSSPP/Dolphin/Lemuroid…）
-            // 接受 content:// URI；RetroArch 额外读取 "ROM" 字符串 extra。
-            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-                setPackage(args.packageName)
-                setDataAndType(romUri, mime)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                putExtra("ROM", args.romPath)
-                putExtra("rom", args.romPath)
-                putExtra("PATH", args.romPath)
+            // 有序候选链（Rust 侧按平台解析）：按序 startActivity 直到成功。
+            val candidates = JSONObject(invoke.getRawArgs()).optJSONArray("candidates")
+            if (candidates != null && candidates.length() > 0) {
+                val errors = mutableListOf<String>()
+                for (i in 0 until candidates.length()) {
+                    val candidate = candidates.optJSONObject(i) ?: continue
+                    val mode = candidate.optString("mode")
+                    val pkg = candidate.optString("package")
+                    if (pkg.isEmpty()) continue
+                    try {
+                        when (mode) {
+                            "retroarch" -> {
+                                val activityClass = candidate.optString("activity")
+                                    .ifEmpty { "com.retroarch.browser.retroactivity.RetroActivityFuture" }
+                                val core = candidate.optString("core")
+                                val intent = Intent().apply {
+                                    component = ComponentName(pkg, activityClass)
+                                    putExtra("ROM", args.romPath)
+                                    putExtra("LIBRETRO", core)
+                                    putExtra(
+                                        "CONFIGFILE",
+                                        "/storage/emulated/0/Android/data/$pkg/files/retroarch.cfg"
+                                    )
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                activity.startActivity(intent)
+                                invoke.resolve(JSObject().apply {
+                                    put("launched", true)
+                                    put("strategy", "retroarch:$core")
+                                })
+                                return
+                            }
+                            "view" -> {
+                                activity.startActivity(buildViewIntent(pkg, romFile, args.romPath))
+                                invoke.resolve(JSObject().apply {
+                                    put("launched", true)
+                                    put("strategy", "view:$pkg")
+                                })
+                                return
+                            }
+                            "menu" -> {
+                                val menuIntent =
+                                    activity.packageManager.getLaunchIntentForPackage(pkg)
+                                if (menuIntent == null) {
+                                    errors.add("$pkg: 未安装")
+                                    continue
+                                }
+                                menuIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                menuIntent.putExtra("ROM", args.romPath)
+                                menuIntent.putExtra("rom", args.romPath)
+                                menuIntent.putExtra("PATH", args.romPath)
+                                activity.startActivity(menuIntent)
+                                invoke.resolve(JSObject().apply {
+                                    put("launched", true)
+                                    put("strategy", "menu:$pkg")
+                                })
+                                return
+                            }
+                            else -> errors.add("$pkg: 未知模式 $mode")
+                        }
+                    } catch (e: Exception) {
+                        errors.add("$pkg/$mode: ${e.message ?: e.javaClass.simpleName}")
+                    }
+                }
+                invoke.reject("所有启动方式均失败 — ${errors.joinToString("; ")}")
+                return
             }
+
+            // 旧式两级策略（无候选链时兼容）：view → launcher。
             try {
-                activity.startActivity(viewIntent)
+                activity.startActivity(buildViewIntent(args.packageName, romFile, args.romPath))
                 invoke.resolve(JSObject().apply {
                     put("launched", true)
                     put("strategy", "view-intent")
@@ -200,6 +262,24 @@ class HandheldPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /** ACTION_VIEW + FileProvider content URI（多数模拟器接受该形式直进游戏）。 */
+    private fun buildViewIntent(pkg: String, romFile: File, romPath: String): Intent {
+        val authority = activity.packageName + ".fileprovider"
+        val romUri = FileProvider.getUriForFile(activity, authority, romFile)
+        val extension = romFile.extension.lowercase()
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            ?: "application/octet-stream"
+        return Intent(Intent.ACTION_VIEW).apply {
+            setPackage(pkg)
+            setDataAndType(romUri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra("ROM", romPath)
+            putExtra("rom", romPath)
+            putExtra("PATH", romPath)
+        }
+    }
+
     @Command
     fun hasAllFilesAccess(invoke: Invoke) {
         invoke.resolve(JSObject().apply { put("granted", allFilesGranted()) })
@@ -219,6 +299,49 @@ class HandheldPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(JSObject().apply { put("granted", allFilesGranted()) })
         } catch (error: Exception) {
             invoke.reject(error.message ?: "Failed to request all-files access")
+        }
+    }
+
+    /**
+     * 掌机显示模式：隐藏或恢复 Android 状态栏与底部导航栏。
+     *
+     * 使用 transient immersive 行为，用户从屏幕边缘滑动时仍可临时呼出系统栏，
+     * 但不会让三键导航栏永久占用游戏界面高度。旧版 Android 使用兼容 flags。
+     */
+    @Command
+    fun setSystemBars(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(SystemBarsArgs::class.java)
+            val immersive = args.immersive
+            activity.runOnUiThread {
+                val decor = activity.window.decorView
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    activity.window.setDecorFitsSystemWindows(!immersive)
+                    activity.window.insetsController?.let { controller ->
+                        controller.systemBarsBehavior =
+                            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        if (immersive) {
+                            controller.hide(WindowInsets.Type.systemBars())
+                        } else {
+                            controller.show(WindowInsets.Type.systemBars())
+                        }
+                    }
+                } else {
+                    var flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    if (immersive) {
+                        flags = flags or
+                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    }
+                    decor.systemUiVisibility = flags
+                }
+                invoke.resolve(JSObject().apply { put("immersive", immersive) })
+            }
+        } catch (error: Exception) {
+            invoke.reject(error.message ?: "Failed to change system bars")
         }
     }
 

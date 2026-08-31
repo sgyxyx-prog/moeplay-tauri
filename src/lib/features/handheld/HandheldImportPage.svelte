@@ -147,7 +147,8 @@
   }
 
   function back() {
-    navigateTo("handheld");
+    // Android 终版将导入完成后的落点统一回掌机首页；旧 handheld 仍只作为兼容 hash。
+    navigateTo("home");
   }
 </script>
 
@@ -281,23 +282,26 @@
   .import-page {
     height: 100%;
     display: flex; flex-direction: column;
-    background: #0a0c12; color: #e8eaf0;
+    background: var(--bg-void); color: var(--text-primary);
+    font-family: var(--font-ui);
     overflow: hidden;
   }
   .ip-topbar {
     display: flex; align-items: center; gap: 16px;
     padding: 14px 22px;
-    border-bottom: 1px solid rgb(255 255 255 / .08);
+    border-bottom: 1px solid var(--border);
   }
-  .ip-topbar h1 { margin: 0; font-size: 1.1rem; font-weight: 750; }
+  .ip-topbar h1 { margin: 0; font-family: var(--font-display); font-size: 1.1rem; font-weight: 750; }
   .ip-back {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 12px; border-radius: 10px;
-    border: 1px solid rgb(255 255 255 / .12);
-    background: transparent; color: #c6ccd8;
-    font: 600 .8rem/1 var(--font-ui, system-ui); cursor: pointer;
+    padding: 8px 12px; border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: transparent; color: var(--text-secondary);
+    font: 600 .8rem/1 var(--font-ui); cursor: pointer;
+    transition: border-color .18s ease, color .18s ease;
   }
-  .ip-step-hint { margin-left: auto; font-size: .72rem; color: #67707f; letter-spacing: .06em; }
+  .ip-back:hover { border-color: var(--border-hover); color: var(--text-primary); }
+  .ip-step-hint { margin-left: auto; font-size: .72rem; color: var(--text-muted); letter-spacing: .06em; }
 
   .ip-content {
     flex: 1; min-height: 0; overflow-y: auto;
@@ -305,101 +309,122 @@
     display: flex; flex-direction: column; gap: 14px;
   }
   .ip-section {
-    border: 1px solid rgb(255 255 255 / .09);
-    border-radius: 14px;
-    background: rgb(255 255 255 / .03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    box-shadow: var(--glass-highlight);
     padding: 14px 16px;
     display: flex; flex-direction: column; gap: 10px;
   }
-  .ip-section.ok { border-color: rgb(74 222 128 / .3); }
+  .ip-section.ok { border-color: color-mix(in srgb, var(--color-success) 38%, transparent); }
   .ip-section.dim { opacity: .45; pointer-events: none; }
   .ip-section-title { font-weight: 700; font-size: .92rem; display: flex; align-items: center; gap: 8px; }
   .ip-num {
     min-width: 26px; height: 20px; border-radius: 7px;
     display: inline-flex; align-items: center; justify-content: center;
-    background: rgb(255 77 95 / .15); color: var(--accent, #ff4d5f);
-    font: 700 .68rem/1 var(--font-mono, monospace);
+    background: var(--accent-lo); color: var(--accent);
+    font: 700 .68rem/1 var(--font-mono);
   }
-  .ip-line { margin: 0; font-size: .82rem; color: #9aa3b2; line-height: 1.6; }
-  .ok-line { color: #4ade80; display: flex; align-items: center; gap: 6px; }
-  .warn-line { color: #fbbf24; }
+  .ip-line { margin: 0; font-size: .82rem; color: var(--text-secondary); line-height: 1.6; }
+  .ok-line { color: var(--color-success); display: flex; align-items: center; gap: 6px; }
+  .warn-line { color: var(--color-warning); }
   .ip-actions { display: flex; gap: 10px; }
 
   .ip-cta {
-    padding: 11px 20px; border: 0; border-radius: 11px;
-    background: var(--accent, #ff4d5f); color: #fff;
-    font: 700 .82rem/1 var(--font-ui, system-ui); cursor: pointer;
+    padding: 11px 20px; border: 0; border-radius: var(--radius-md);
+    background: var(--accent); color: #fff;
+    font: 700 .82rem/1 var(--font-ui); cursor: pointer;
+    transition: background .18s ease;
   }
+  .ip-cta:hover { background: var(--accent-hi); }
   .ip-cta:disabled { opacity: .5; }
-  .ip-cta.secondary { background: rgb(255 255 255 / .07); border: 1px solid rgb(255 255 255 / .14); color: #dfe4ec; }
+  .ip-cta.secondary { background: var(--bg-elev); border: 1px solid var(--border); color: var(--text-primary); }
+  .ip-cta.secondary:hover { border-color: var(--border-hover); background: var(--bg-hover); }
 
   .ip-emu-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
   .ip-emu {
     display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
-    padding: 10px 13px; border-radius: 11px;
-    border: 1px solid rgb(255 255 255 / .1);
-    background: transparent; color: #c6ccd8; cursor: pointer; text-align: left;
+    padding: 10px 13px; border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: transparent; color: var(--text-secondary); cursor: pointer; text-align: left;
+    transition: border-color .18s ease, background .18s ease;
   }
-  .ip-emu strong { font-size: .85rem; color: #e8eaf0; }
-  .ip-emu span { font-size: .68rem; color: #67707f; font-family: var(--font-mono, monospace); }
-  .ip-emu.active { border-color: var(--accent, #ff4d5f); background: rgb(255 77 95 / .1); }
+  .ip-emu:hover { border-color: var(--border-hover); }
+  .ip-emu strong { font-size: .85rem; color: var(--text-primary); }
+  .ip-emu span { font-size: .68rem; color: var(--text-muted); font-family: var(--font-mono); }
+  .ip-emu.active { border-color: var(--accent-ring); background: var(--accent-lo); }
 
   .ip-roots { display: flex; gap: 8px; flex-wrap: wrap; }
   .ip-root {
-    padding: 8px 14px; border-radius: 99px;
-    border: 1px solid rgb(255 255 255 / .12);
-    background: transparent; color: #c6ccd8;
-    font: 600 .78rem/1 var(--font-ui, system-ui); cursor: pointer;
+    padding: 8px 14px; border-radius: var(--radius-full);
+    border: 1px solid var(--border);
+    background: transparent; color: var(--text-secondary);
+    font: 600 .78rem/1 var(--font-ui); cursor: pointer;
+    transition: border-color .18s ease, color .18s ease, background .18s ease;
   }
-  .ip-root.active { border-color: var(--accent, #ff4d5f); color: var(--accent, #ff4d5f); background: rgb(255 77 95 / .08); }
+  .ip-root:hover { border-color: var(--border-hover); color: var(--text-primary); }
+  .ip-root.active { border-color: var(--accent-ring); color: var(--accent-hi); background: var(--accent-lo); }
   .ip-root.missing { opacity: .35; }
 
   .ip-dir-row { display: flex; gap: 8px; }
   .ip-dir-row input {
-    flex: 1; padding: 11px 14px; border-radius: 11px;
-    border: 1px solid rgb(255 255 255 / .12);
-    background: #0d1017; color: #e8eaf0;
-    font: .82rem/1 var(--font-mono, monospace);
+    flex: 1; padding: 11px 14px; border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--bg-deep); color: var(--text-primary);
+    font: .82rem/1 var(--font-mono);
+    outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease;
   }
+  .ip-dir-row input:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 
   .ip-platform-chips { display: flex; gap: 8px; flex-wrap: wrap; }
   .ip-assign { display: flex; gap: 8px; flex-wrap: wrap; }
   .ip-assign-chip {
-    padding: 6px 12px; border-radius: 99px;
-    border: 1px solid rgb(74 222 128 / .35);
-    background: rgb(74 222 128 / .07);
-    color: #a7f3c7;
-    font: 600 .72rem/1 var(--font-ui, system-ui);
+    padding: 6px 12px; border-radius: var(--radius-full);
+    border: 1px solid color-mix(in srgb, var(--color-success) 38%, transparent);
+    background: color-mix(in srgb, var(--color-success) 8%, transparent);
+    color: color-mix(in srgb, var(--color-success) 72%, white);
+    font: 600 .72rem/1 var(--font-ui);
   }
-  .ip-assign-chip.warn { border-color: rgb(251 191 36 / .4); background: rgb(251 191 36 / .07); color: #fbbf24; }
+  .ip-assign-chip.warn {
+    border-color: color-mix(in srgb, var(--color-warning) 42%, transparent);
+    background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+    color: var(--color-warning);
+  }
   .ip-chip {
-    padding: 7px 13px; border-radius: 99px;
-    border: 1px solid rgb(255 255 255 / .12);
-    background: transparent; color: #c6ccd8;
-    font: 600 .74rem/1 var(--font-ui, system-ui); cursor: pointer;
+    padding: 7px 13px; border-radius: var(--radius-full);
+    border: 1px solid var(--border);
+    background: transparent; color: var(--text-secondary);
+    font: 600 .74rem/1 var(--font-ui); cursor: pointer;
+    transition: border-color .18s ease, color .18s ease;
   }
-  .ip-chip.all { border-color: rgb(255 255 255 / .25); color: #e8eaf0; }
+  .ip-chip:hover { border-color: var(--border-hover); color: var(--text-primary); }
+  .ip-chip.all { border-color: var(--border-hover); color: var(--text-primary); }
 
   .ip-rom-list {
     max-height: 320px; overflow-y: auto;
-    border: 1px solid rgb(255 255 255 / .09); border-radius: 11px;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
     display: flex; flex-direction: column;
+    background: color-mix(in srgb, var(--bg-deep) 60%, transparent);
   }
   .ip-rom {
     display: grid; grid-template-columns: 22px 44px minmax(0, 1fr);
     align-items: center; gap: 10px;
     padding: 8px 12px;
-    border-bottom: 1px solid rgb(255 255 255 / .06);
+    border-bottom: 1px solid var(--border);
     cursor: pointer;
   }
+  .ip-rom:hover { background: var(--bg-hover); }
   .ip-rom:last-child { border-bottom: 0; }
-  .ip-rom input { accent-color: var(--accent, #ff4d5f); }
+  .ip-rom input { accent-color: var(--accent); }
   .ip-rom-cover {
     width: 44px; height: 56px; border-radius: 6px; overflow: hidden;
-    background: #161a24;
+    background: var(--bg-card);
   }
   .ip-rom-cover img { width: 100%; height: 100%; object-fit: cover; }
   .ip-rom-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .ip-rom-info strong { font-size: .84rem; color: #e8eaf0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ip-rom-info span { font-size: .7rem; color: #828b9b; font-family: var(--font-mono, monospace); }
+  .ip-rom-info strong { font-size: .84rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ip-rom-info span { font-size: .7rem; color: var(--text-muted); font-family: var(--font-mono); }
 </style>

@@ -9,6 +9,7 @@ Allows MoePlay to detect installed emulators, launch ROMs via intents, and reque
 - `allow-has-all-files-access`
 - `allow-request-all-files-access`
 - `allow-discover-rom-roots`
+- `allow-set-system-bars`
 
 ## Permission Table
 
@@ -145,6 +146,32 @@ Enables the request_all_files_access command without any pre-configured scope.
 <td>
 
 Denies the request_all_files_access command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`handheld:allow-set-system-bars`
+
+</td>
+<td>
+
+Enables the set_system_bars command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`handheld:deny-set-system-bars`
+
+</td>
+<td>
+
+Denies the set_system_bars command without any pre-configured scope.
 
 </td>
 </tr>

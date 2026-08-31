@@ -32,6 +32,16 @@ NDK_POSIX="$(cygpath "$NDK_HOME")"
 : "${LIBCLANG_PATH:?需要 LIBCLANG_PATH 指向 libclang.dll 所在目录（pip install libclang 后在其 clang/native 下）}"
 export BINDGEN_EXTRA_CLANG_ARGS_AARCH64_LINUX_ANDROID="--sysroot=$NDK_POSIX/toolchains/llvm/prebuilt/windows-x86_64/sysroot -I$NDK_POSIX/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/19/include"
 
+# 交叉编译器 / 链接器（cc-rs 与 rustc 都需要显式指向 NDK 工具链）：
+#   - CC_*/CXX_*/AR_*：cc-rs 编译 C 依赖（找不到时报 failed to find tool "clang.exe"）
+#   - CARGO_TARGET_*_LINKER：rustc 链接（找不到时报 linker `cc` not found）；
+#     NDK 的 target 前缀 .cmd 已内置 --target=aarch64-linux-android24（与 minSdk 一致）
+NDK_TOOLCHAIN_BIN="$NDK_HOME/toolchains/llvm/prebuilt/windows-x86_64/bin"
+export CC_aarch64_linux_android="${CC_aarch64_linux_android:-$NDK_TOOLCHAIN_BIN\\clang.exe}"
+export CXX_aarch64_linux_android="${CXX_aarch64_linux_android:-$NDK_TOOLCHAIN_BIN\\clang++.exe}"
+export AR_aarch64_linux_android="${AR_aarch64_linux_android:-$NDK_TOOLCHAIN_BIN\\llvm-ar.exe}"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER:-$NDK_TOOLCHAIN_BIN\\aarch64-linux-android24-clang.cmd}"
+
 # 坑 1：纯 ASCII 构建目录（可用 CARGO_TARGET_DIR 覆盖）
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-D:\\moeplay-android-target}"
 

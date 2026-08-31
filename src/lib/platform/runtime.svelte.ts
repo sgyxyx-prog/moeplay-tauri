@@ -35,17 +35,25 @@ const androidCapabilities: PlatformCapabilities = {
 
 export const MOBILE_ALLOWED_VIEWS = new Set([
   "home",
+  "game-library",
+  "records",
   "game-detail",
   "anime",
   "comic",
   "novel",
   "continue",
   "discovery",
+  "scraper",
   "downloads",
   "sources",
+  "backup",
+  "stats",
   "handheld",
   "handheld-import",
   "tasks",
+  "diagnostics",
+  "steam-import",
+  "emulator",
   "settings",
 ]);
 

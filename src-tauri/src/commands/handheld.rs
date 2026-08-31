@@ -347,6 +347,188 @@ pub(crate) fn parse_android_intent_uri(uri: &str) -> Option<(String, String)> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// 启动候选链解析（Android）
+//
+// 「打开游戏就跳转进去」：按平台 + ROM 所在系统目录（sysdir）解析出有序的
+// 启动候选，Kotlin 侧按序 startActivity 直到成功。直启（RetroArch 核心 /
+// 独立模拟器 VIEW）优先，主界面唤起兜底；空链 = 该平台暂不支持。
+// ---------------------------------------------------------------------------
+
+pub use tauri_plugin_handheld::LaunchCandidate;
+
+/// RetroArch（64 位）默认包名与游戏启动 Activity（真机验证）。
+pub(crate) const RETROARCH_PACKAGE: &str = "com.retroarch.aarch64";
+const RETROARCH_ACTIVITY: &str = "com.retroarch.browser.retroactivity.RetroActivityFuture";
+
+fn candidate_view(package: &str) -> LaunchCandidate {
+    LaunchCandidate {
+        mode: "view".into(),
+        package: package.into(),
+        activity: None,
+        core: None,
+    }
+}
+
+fn candidate_menu(package: &str) -> LaunchCandidate {
+    LaunchCandidate {
+        mode: "menu".into(),
+        package: package.into(),
+        activity: None,
+        core: None,
+    }
+}
+
+fn candidate_retroarch(package: &str, core: &str) -> LaunchCandidate {
+    LaunchCandidate {
+        mode: "retroarch".into(),
+        package: package.into(),
+        activity: Some(RETROARCH_ACTIVITY.into()),
+        core: Some(core.into()),
+    }
+}
+
+/// sysdir（ROM 系统目录名，小写）→ RetroArch 核心文件名。用于细分聚合平台：
+/// arcade 聚合了 cps*/fbneo/mame/naomi/neogeo*，md 含 sega32x。
+/// 均为真机逐一截图验证过的可用核心（裸文件名，RetroArch 自动解析内部核心目录）。
+fn core_from_sysdir(sysdir: &str) -> Option<&'static str> {
+    match sysdir {
+        "cps1" | "cps2" | "cps3" | "fbneo" | "neogeo" => Some("fbneo_plus_libretro.so"),
+        "mame" => Some("mame2003_plus_libretro_android.so"),
+        "naomi" | "atomiswave" => Some("flycast_libretro_android.so"),
+        "neogeocd" => Some("neocd_libretro_android.so"),
+        "sega32x" | "32x" => Some("picodrive_libretro_android.so"),
+        _ => None,
+    }
+}
+
+/// 平台 → RetroArch 核心文件名兜底映射（真机验证）。
+fn core_from_type(game_type: &str) -> Option<&'static str> {
+    match game_type {
+        "nes" => Some("fceumm_libretro_android.so"),
+        "snes" => Some("snes9x_libretro_android.so"),
+        "gb" | "gbc" => Some("gambatte_libretro_android.so"),
+        "gba" => Some("mgba_libretro_android.so"),
+        "md" => Some("genesis_plus_gx_libretro_android.so"),
+        "ps1" => Some("pcsx_rearmed_libretro_android.so"),
+        "dreamcast" => Some("flycast_libretro_android.so"),
+        // arcade 无 sysdir 命中时兜底 fbneo（覆盖率最高的街机核心）
+        "arcade" => Some("fbneo_plus_libretro.so"),
+        "msx" => Some("fmsx_libretro_android.so"),
+        "pcengine" => Some("mednafen_pce_fast_libretro_android.so"),
+        "pc98" => Some("np2kai_libretro_android.so"),
+        "virtualboy" => Some("beetle_vb_libretro_android.so"),
+        "wsc" => Some("mednafen_wswan_libretro_android.so"),
+        "pokemini" => Some("pokemini_libretro_android.so"),
+        "gameandwatch" => Some("gw_libretro_android.so"),
+        "arduboy" => Some("ardens_libretro_android.so"),
+        "atari7800" => Some("prosystem_libretro_android.so"),
+        "supervision" => Some("potator_libretro_android.so"),
+        "vectrex" => Some("vecx_libretro_android.so"),
+        "zxspectrum" => Some("fuse_libretro_android.so"),
+        "dos" => Some("dosbox_pure_libretro_android.so"),
+        "easyrpg" => Some("easyrpg_libretro_android.so"),
+        "pico8" => Some("fake08_libretro.so"),
+        "tic80" => Some("tic80_libretro_android.so"),
+        "bbk" => Some("gam4980_libretro.so"),
+        // ngpc / cdi 核心已真机复验可用（mednafen_ngp / same_cdi）。
+        "ngpc" => Some("mednafen_ngp_libretro_android.so"),
+        "cdi" => Some("same_cdi_libretro_android.so"),
+        // saturn 核心存在于设备核心目录，但无 ROM 可复验，按 ES-DE 常规映射给出。
+        "saturn" => Some("mednafen_saturn_libretro_android.so"),
+        _ => None,
+    }
+}
+
+/// 解析启动候选链。返回空 Vec = 该平台暂不支持直接启动。
+///
+/// - 独立模拟器直启已真机验证：PPSSPP / DraStic / Mupen64Plus FZ / J2ME Loader
+///   均可 ACTION_VIEW + content URI 直进游戏；AetherSX2 / DuckStation 无可用
+///   VIEW 入口，退回主界面；ngpc / cdi 无可用 RetroArch 核心，不支持。
+/// - stored_package 非 RetroArch 且非空时，链首追加该包 VIEW 候选（尊重用户
+///   在导入/编辑时显式选择的模拟器）。
+pub fn resolve_launch_candidates(
+    game_type: &str,
+    rom_path: &str,
+    stored_package: &str,
+) -> Vec<LaunchCandidate> {
+    let parent_dir = Path::new(rom_path)
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    // ROM 可能位于系统目录下一级的游戏子目录（如 rom/psx/<游戏>/game.chd）。
+    let grand_dir = Path::new(rom_path)
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    let core = core_from_sysdir(&parent_dir)
+        .or_else(|| core_from_sysdir(&grand_dir))
+        .or_else(|| core_from_type(game_type));
+
+    let ra_pkg = if stored_package.starts_with("com.retroarch") {
+        stored_package
+    } else {
+        RETROARCH_PACKAGE
+    };
+
+    let mut chain: Vec<LaunchCandidate> = Vec::new();
+    if !stored_package.is_empty() && !stored_package.starts_with("com.retroarch") {
+        chain.push(candidate_view(stored_package));
+    }
+
+    match game_type {
+        "psp" => {
+            chain.push(candidate_view("org.ppsspp.ppsspp"));
+            chain.push(candidate_menu("org.ppsspp.ppsspp"));
+        }
+        "nds" => {
+            chain.push(candidate_view("com.dsemu.drastic"));
+            chain.push(candidate_retroarch(ra_pkg, "melonds_libretro_android.so"));
+            chain.push(candidate_menu("com.dsemu.drastic"));
+        }
+        "n64" => {
+            // RetroArch mupen64plus_next（gles3 变体）已真机验证直进游戏；
+            // 独立版 Mupen64 只认 SAF URI（FileProvider 会落到游戏库），故仅作菜单兜底。
+            chain.push(candidate_retroarch(
+                ra_pkg,
+                "mupen64plus_next_gles3_libretro_android.so",
+            ));
+            chain.push(candidate_menu("org.mupen64plusae.v3.fzurita.pro"));
+            chain.push(candidate_menu("org.mupen64plusae.v3.fzurita"));
+            chain.push(candidate_menu(ra_pkg));
+        }
+        "j2me" => {
+            chain.push(candidate_view("ru.playsoftware.j2meloader"));
+            chain.push(candidate_menu("ru.playsoftware.j2meloader"));
+        }
+        "ps2" => {
+            // AetherSX2 v1.5 无可用直启入口（已验证），退回主界面。
+            chain.push(candidate_menu("xyz.aethersx2.android"));
+        }
+        "onscripter" => {
+            chain.push(candidate_menu("com.onscripter.plus"));
+        }
+        // 无可用核心 / 无可用直启入口的平台：明确不支持。
+        "gamecube" | "wii" | "3ds" | "switch" | "psvita" => {}
+        _ => {
+            if let Some(core) = core {
+                chain.push(candidate_retroarch(ra_pkg, core));
+                chain.push(candidate_menu(ra_pkg));
+            }
+        }
+    }
+
+    // 去重（保序）：stored 包与平台默认包可能重复。
+    let mut seen = std::collections::HashSet::new();
+    chain.retain(|c| seen.insert((c.mode.clone(), c.package.clone(), c.core.clone())));
+    chain
+}
+
 fn scan_dir_recursive(root: &Path, dir: &Path, depth: usize, out: &mut Vec<ScannedRom>) {
     if depth > 6 {
         return;
@@ -810,5 +992,142 @@ mod tests {
         assert!(rom.cover.unwrap().ends_with("ruby.png"));
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn resolves_retroarch_core_by_sysdir_for_arcade_and_md() {
+        let cps = resolve_launch_candidates(
+            "arcade",
+            "/storage/AB/rom/cps2/1941.zip",
+            "com.retroarch.aarch64",
+        );
+        assert_eq!(cps[0].mode, "retroarch");
+        assert_eq!(cps[0].core.as_deref(), Some("fbneo_plus_libretro.so"));
+        assert_eq!(cps[0].package, "com.retroarch.aarch64");
+        assert_eq!(
+            cps[0].activity.as_deref(),
+            Some("com.retroarch.browser.retroactivity.RetroActivityFuture")
+        );
+
+        let mame = resolve_launch_candidates(
+            "arcade",
+            "/storage/AB/rom/mame/pacman.zip",
+            "com.retroarch.aarch64",
+        );
+        assert_eq!(
+            mame[0].core.as_deref(),
+            Some("mame2003_plus_libretro_android.so")
+        );
+
+        let x32 = resolve_launch_candidates("md", "/storage/AB/rom/sega32x/virtua.32x", "");
+        assert_eq!(
+            x32[0].core.as_deref(),
+            Some("picodrive_libretro_android.so")
+        );
+
+        let md = resolve_launch_candidates("md", "/storage/AB/rom/megadrive/sonic.md", "");
+        assert_eq!(
+            md[0].core.as_deref(),
+            Some("genesis_plus_gx_libretro_android.so")
+        );
+
+        // 游戏子目录情况：sysdir 向上多查一层。
+        let nested = resolve_launch_candidates(
+            "arcade",
+            "/storage/AB/rom/neogeo/拳皇97/kof97.zip",
+            "com.retroarch.aarch64",
+        );
+        assert_eq!(nested[0].core.as_deref(), Some("fbneo_plus_libretro.so"));
+    }
+
+    #[test]
+    fn nds_chain_prefers_drastic_view_then_melonds_fallback() {
+        let c =
+            resolve_launch_candidates("nds", "/storage/AB/rom/nds/a.nds", "com.retroarch.aarch64");
+        assert_eq!(c[0].mode, "view");
+        assert_eq!(c[0].package, "com.dsemu.drastic");
+        assert!(c
+            .iter()
+            .any(|x| x.mode == "retroarch"
+                && x.core.as_deref() == Some("melonds_libretro_android.so")));
+        assert!(c
+            .iter()
+            .any(|x| x.mode == "menu" && x.package == "com.dsemu.drastic"));
+    }
+
+    #[test]
+    fn psp_chain_uses_ppsspp_view_then_menu() {
+        let c =
+            resolve_launch_candidates("psp", "/storage/AB/rom/psp/a.iso", "com.retroarch.aarch64");
+        assert_eq!(c[0].mode, "view");
+        assert_eq!(c[0].package, "org.ppsspp.ppsspp");
+        assert_eq!(c[1].mode, "menu");
+    }
+
+    #[test]
+    fn ps1_chain_uses_verified_pcsx_core() {
+        let c = resolve_launch_candidates(
+            "ps1",
+            "/storage/AB/rom/psx/bio.chd",
+            "com.retroarch.aarch64",
+        );
+        assert_eq!(c[0].mode, "retroarch");
+        assert_eq!(
+            c[0].core.as_deref(),
+            Some("pcsx_rearmed_libretro_android.so")
+        );
+    }
+
+    #[test]
+    fn n64_chain_prefers_verified_gles3_core_then_standalone_menu() {
+        let c = resolve_launch_candidates("n64", "/rom/n64/zelda.z64", "com.retroarch.aarch64");
+        assert_eq!(c[0].mode, "retroarch");
+        assert_eq!(
+            c[0].core.as_deref(),
+            Some("mupen64plus_next_gles3_libretro_android.so")
+        );
+        assert!(c
+            .iter()
+            .any(|x| x.mode == "menu" && x.package == "org.mupen64plusae.v3.fzurita.pro"));
+    }
+
+    #[test]
+    fn ngpc_and_cdi_use_reverified_cores() {
+        let ngpc = resolve_launch_candidates("ngpc", "/rom/ngpc/svc.zip", "com.retroarch.aarch64");
+        assert_eq!(ngpc[0].mode, "retroarch");
+        assert_eq!(
+            ngpc[0].core.as_deref(),
+            Some("mednafen_ngp_libretro_android.so")
+        );
+        let cdi =
+            resolve_launch_candidates("cdi", "/rom/cdimono1/zelda.chd", "com.retroarch.aarch64");
+        assert_eq!(cdi[0].core.as_deref(), Some("same_cdi_libretro_android.so"));
+    }
+
+    #[test]
+    fn unsupported_platform_returns_empty_chain() {
+        assert!(resolve_launch_candidates("psvita", "/rom/psvita/a.vpk", "").is_empty());
+        assert!(resolve_launch_candidates("switch", "/rom/switch/a.nsp", "").is_empty());
+    }
+
+    #[test]
+    fn stored_non_retroarch_package_gets_view_candidate_first() {
+        let c = resolve_launch_candidates("gba", "/rom/gba/a.gba", "it.dbtecno.pizzaboygbapro");
+        assert_eq!(c[0].mode, "view");
+        assert_eq!(c[0].package, "it.dbtecno.pizzaboygbapro");
+        // RetroArch 核心候选仍在后方兜底。
+        assert!(c.iter().any(
+            |x| x.mode == "retroarch" && x.core.as_deref() == Some("mgba_libretro_android.so")
+        ));
+    }
+
+    #[test]
+    fn candidates_dedup_when_stored_package_matches_default() {
+        let c = resolve_launch_candidates("psp", "/rom/psp/a.iso", "org.ppsspp.ppsspp");
+        let view_count = c
+            .iter()
+            .filter(|x| x.mode == "view" && x.package == "org.ppsspp.ppsspp")
+            .count();
+        assert_eq!(view_count, 1);
     }
 }

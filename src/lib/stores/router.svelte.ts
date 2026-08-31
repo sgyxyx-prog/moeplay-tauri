@@ -43,6 +43,7 @@ export type BackNavigationResult = "overlay" | "detail" | "subview" | "none";
 const INTERNAL_VIEWS = new Set(["__tools", "__bigpicture"]);
 export const KNOWN_VIEWS: string[] = [
   "home",
+  "game-library",
   "game-detail",
   // 安卓掌机模式独占视图（非安卓平台由 isViewSupportedOnPlatform 过滤）
   "handheld",

@@ -8,4 +8,5 @@ permissions = [
   "allow-has-all-files-access",
   "allow-request-all-files-access",
   "allow-discover-rom-roots",
+  "allow-set-system-bars",
 ]

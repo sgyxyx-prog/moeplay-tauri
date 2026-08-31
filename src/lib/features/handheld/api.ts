@@ -73,6 +73,14 @@ export async function discoverRomRoots(): Promise<RomRootInfo[]> {
   return res.roots.map((r) => ({ ...r, exists: true }));
 }
 
+/** 掌机沉浸式显示：隐藏/恢复 Android 状态栏与底部导航栏。 */
+export async function setHandheldSystemBars(immersive: boolean): Promise<boolean> {
+  const res = await invoke<{ immersive: boolean }>("plugin:handheld|set_system_bars", {
+    request: { immersive },
+  });
+  return res.immersive;
+}
+
 export function handheldScanRoms(dir: string): Promise<ScannedRom[]> {
   return invokeCmd<ScannedRom[]>("handheld_scan_roms", { dir });
 }
