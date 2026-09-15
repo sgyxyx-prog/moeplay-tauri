@@ -61,8 +61,10 @@ def _decode_point(data):
     x = pow((y * y - 1) * _inv((D * y * y + 1) % Q) % Q, (Q + 3) // 8, Q)
     if (x * x - (y * y - 1) * _inv((D * y * y + 1) % Q)) % Q:
         x = x * I % Q
-    if (x * x - (y * y - 1) * _inv((D * y * y + 1) % Q)) % Q or (x & 1) != sign:
+    if (x * x - (y * y - 1) * _inv((D * y * y + 1) % Q)) % Q:
         raise ValueError("invalid Ed25519 point")
+    if (x & 1) != sign:
+        x = Q - x
     return (x, y)
 
 
@@ -139,7 +141,7 @@ def _load_public_key(root, explicit=None):
     path = Path(explicit or os.environ.get("MOEPLAY_UPDATER_PUBLIC_KEY_PATH", root / "updater-public-key.txt"))
     if not path.is_file():
         raise SystemExit(f"Missing fixed updater public key: {path}")
-    return path.read_text().strip()
+    return path.read_text(encoding="utf-8").strip()
 
 if len(sys.argv) < 3:
     raise SystemExit(__doc__ or "Usage: activate.py ROOT VERSION")
@@ -160,12 +162,12 @@ for name in ("index.html", "site.css", "site.js", "assets/desktop.png", "assets/
     if not (stage / "site" / name).is_file():
         raise SystemExit(f"Missing site file: {name}")
 assets = stage / "downloads"
-manifest = json.loads((assets / "release-manifest.json").read_text())
+manifest = json.loads((assets / "release-manifest.json").read_text(encoding="utf-8"))
 if manifest.get("schemaVersion") != 1 or manifest.get("version") != version or not re.fullmatch(r"[0-9a-f]{40}", manifest.get("commit", "")):
     raise SystemExit("Version mismatch")
 if not isinstance(manifest.get("assets"), list) or not manifest["assets"]:
     raise SystemExit("Missing release assets")
-latest = json.loads((assets / "latest.json").read_text())
+latest = json.loads((assets / "latest.json").read_text(encoding="utf-8"))
 seen = set()
 for asset in manifest["assets"]:
     name = asset.get("file")
@@ -213,7 +215,7 @@ shutil.copytree(stage / "site", site)
 for name in ("release-manifest.json", "latest.json"):
     shutil.copy2(assets / name, site / name)
 versions = sorted([p.name for p in site.parent.iterdir() if p.is_dir() and re.fullmatch(r"\d+\.\d+\.\d+", p.name)], key=lambda s: tuple(map(int, s.split("."))))
-(site / "versions.json").write_text(json.dumps(versions))
+(site / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
 shutil.move(str(assets), download)
 # Windows SFTP uploads may arrive as owner-only directories. Nginx runs as a
 # separate user and needs read/traverse access to this public, validated batch.
