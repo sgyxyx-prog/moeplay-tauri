@@ -61,6 +61,8 @@ export const collectionStore = {
         collectType,
         ruleSource: extra?.ruleSource ?? detail.ruleName,
         sourceUrl: extra?.sourceUrl ?? detail.sourceUrl,
+        contentId: extra?.contentId,
+        seasonKey: extra?.seasonKey,
         updatedAt: new Date().toISOString(),
       };
       if (idx >= 0) _items[idx] = entry;

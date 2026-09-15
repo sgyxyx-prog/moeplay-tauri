@@ -292,7 +292,7 @@ async function checkItem(item: FollowingItem, loader: EpisodeLoader): Promise<Fo
 }
 
 function itemNeedsCheck(item: FollowingItem, now = Date.now()): boolean {
-  return item.autoCheck && (item.lastCheckedAt === null || now - item.lastCheckedAt >= STALE_AFTER_MS);
+  return item.autoCheck && (item.lastCheckedAt === null || now - item.lastCheckedAt >= CHECK_INTERVAL_MS);
 }
 
 function resumeTarget(item: FollowingItem, histories: readonly FollowingHistoryLike[]): FollowingResumeTarget {
@@ -356,9 +356,10 @@ export const followingStore = {
     return checkItem(item, loader);
   },
 
-  async checkAll(loader: EpisodeLoader = fetchSourceEpisodes) {
+  async checkAll(loader: EpisodeLoader = fetchSourceEpisodes, autoOnly = false) {
     const results: FollowingCheckResult[] = [];
-    for (const item of _items) results.push(await checkItem(item, loader));
+    const items = autoOnly ? _items.filter((item) => itemNeedsCheck(item)) : _items;
+    for (const item of items) results.push(await checkItem(item, loader));
     return results;
   },
 
@@ -398,7 +399,7 @@ export const followingStore = {
     if (autoTimer !== null || typeof window === "undefined") return;
     const run = () => {
       if (document.visibilityState !== "visible" || !registeredLoader) return;
-      void this.checkAll(registeredLoader);
+      void this.checkAll(registeredLoader, true);
     };
     autoTimer = setInterval(run, CHECK_INTERVAL_MS);
     visibilityHandler = run;

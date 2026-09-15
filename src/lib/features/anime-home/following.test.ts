@@ -104,4 +104,17 @@ describe("followingStore 追番更新中心", () => {
     expect(normalizeFollowingEpisode({ name: "特别篇 1", url: "/sp-1" }).special).toBe(true);
     expect(normalizeFollowingEpisode({ name: "特别篇 1", url: "/sp-1" }).id).toContain("special:");
   });
+
+  it("自动检查只调度用户开启的条目", async () => {
+    const manual = followingStore.follow(COLLECTION);
+    const automatic = followingStore.follow({ ...COLLECTION, seasonKey: "season-2" });
+    followingStore.setAutoCheck(automatic.key, true);
+    const checked: string[] = [];
+    await followingStore.checkAll(async (item) => {
+      checked.push(item.key);
+      return [{ name: "第 1 集", url: "/1" }];
+    }, true);
+    expect(checked).toEqual([automatic.key]);
+    expect(followingStore.get(manual.key)?.baselineReady).toBe(false);
+  });
 });
