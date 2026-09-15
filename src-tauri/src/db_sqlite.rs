@@ -2993,6 +2993,9 @@ CREATE INDEX IF NOT EXISTS idx_history_type_updated
   ON history(content_type, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_history_merge_key
   ON history(content_id, source_id);
+-- 新合并身份包含内容类型；保留旧索引以兼容已有数据库和查询计划。
+CREATE INDEX IF NOT EXISTS idx_history_type_merge_key
+  ON history(content_id, content_type, source_id);
 
 CREATE TABLE IF NOT EXISTS migration_state (
   id              INTEGER PRIMARY KEY CHECK (id = 1),
@@ -3072,6 +3075,12 @@ impl HistoryDb {
                      ALTER TABLE migration_staging ADD COLUMN snapshot_json TEXT;",
                 )?;
             }
+            // 旧数据库可能只有 (content_id, source_id) 索引；新增包含
+            // content_type 的索引，不重写原索引，避免升级时影响既有查询。
+            guard.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_history_type_merge_key
+                 ON history(content_id, content_type, source_id);",
+            )?;
         }
         Ok(())
     }

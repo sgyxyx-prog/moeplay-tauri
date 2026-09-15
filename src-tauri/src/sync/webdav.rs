@@ -137,7 +137,8 @@ impl WebDavClient {
         }
     }
 
-    /// PUT；提供 ETag 时使用 `If-Match`，否则按新建文件使用
+    /// 兼容旧调用的 PUT；提供 ETag 时使用 `If-Match`，未提供时保持旧的无条件写入语义。
+    /// 新的同步路径必须调用 [`Self::put_with_condition`]，以便新建文件使用
     /// `If-None-Match: *` 防止覆盖；412 → `PreconditionFailed`。
     pub async fn put(
         &self,
@@ -147,7 +148,7 @@ impl WebDavClient {
     ) -> Result<PutStatus, SyncError> {
         let condition = if_match
             .map(|etag| PutCondition::IfMatch(etag.to_string()))
-            .unwrap_or(PutCondition::CreateOnly);
+            .unwrap_or(PutCondition::Unconditional);
         self.put_with_condition(path, body, condition).await
     }
 
