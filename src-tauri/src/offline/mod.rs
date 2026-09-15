@@ -591,15 +591,34 @@ impl OfflineStore {
 }
 
 fn hydrate_manifest(root: &Path, manifest: &mut OfflineManifest) {
+    // Manifest files are user data and may be damaged or hand-edited. Keep
+    // only opaque single-component keys and always derive paths from the
+    // configured offline root, never from persisted path strings.
+    manifest
+        .chapters
+        .retain(|chapter| is_safe_component(&chapter.offline_chapter_key));
     for chapter in &mut manifest.chapters {
-        if chapter.save_path.is_empty() {
-            chapter.save_path = root
-                .join("chapters")
-                .join(&chapter.offline_chapter_key)
-                .to_string_lossy()
-                .into();
+        chapter.save_path = root
+            .join("chapters")
+            .join(&chapter.offline_chapter_key)
+            .to_string_lossy()
+            .into();
+        if chapter.staging_path.is_some() {
+            chapter.staging_path = Some(
+                root.join("staging")
+                    .join(&chapter.offline_chapter_key)
+                    .to_string_lossy()
+                    .into(),
+            );
         }
     }
+}
+fn is_safe_component(value: &str) -> bool {
+    !value.is_empty()
+        && value != "."
+        && value != ".."
+        && !value.contains('/')
+        && !value.contains('\\')
 }
 fn stable_id(parts: &[&str]) -> String {
     let mut h = Sha256::new();
@@ -796,5 +815,28 @@ mod tests {
             })
             .is_ok());
         assert_eq!(store.stats().unwrap().chapter_count, 0);
+    }
+
+    #[test]
+    fn manifest_paths_are_rebuilt_inside_offline_root() {
+        let dir = tempdir().unwrap();
+        let store = OfflineStore::new(dir.path().to_path_buf()).unwrap();
+        let mut chapter = store.enqueue(request()).unwrap().remove(0);
+        chapter.save_path = "C:\\outside".into();
+        chapter.staging_path = Some("..\\outside".into());
+        let mut unsafe_chapter = chapter.clone();
+        unsafe_chapter.offline_chapter_key = "../outside".into();
+        let mut manifest = OfflineManifest {
+            format: OFFLINE_FORMAT.into(),
+            version: OFFLINE_VERSION,
+            chapters: vec![chapter, unsafe_chapter],
+        };
+        hydrate_manifest(dir.path(), &mut manifest);
+        assert_eq!(manifest.chapters.len(), 1);
+        assert!(Path::new(&manifest.chapters[0].save_path).starts_with(dir.path().join("chapters")));
+        assert!(
+            Path::new(manifest.chapters[0].staging_path.as_deref().unwrap())
+                .starts_with(dir.path().join("staging"))
+        );
     }
 }
