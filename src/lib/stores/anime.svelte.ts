@@ -1817,7 +1817,7 @@ export const animeStore = {
     };
 
     // 搜索与线路解析最多同时运行三个来源，避免一次换源占满网络/WebView。
-    const candidateResults = await mapWithConcurrency(availableRules.slice(0, 3), 3, async (rule): Promise<Candidate | null> => {
+    const candidateResults = await mapWithConcurrency(availableRules, 3, async (rule): Promise<Candidate | null> => {
       try {
         const items = await withTimeout(
           invokeCmd<SearchItem[]>('anime_search', { ruleName: rule.name, keyword: _detailName }),
