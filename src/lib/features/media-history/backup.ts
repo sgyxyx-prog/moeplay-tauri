@@ -57,6 +57,10 @@ export interface MediaHistoryBackup {
   anime: AnimeBackupRecord[];
   manga: MangaBackupRecord[];
   novel: NovelBackupRecord[];
+  /** Compatibility mirror for clients that still consume reading-history v2 text backups. */
+  positions: ReadingPosition[];
+  /** Explicit marker retained for old UI/tests that identify the v2 text backup family. */
+  legacyFormat: "moeplay-reading-history";
   errors: { anime: number; manga: number; novel: number; total: number };
   missing?: string[];
 }
@@ -221,8 +225,36 @@ function novelToPosition(entry: NovelBackupRecord): ReadingPosition {
 
 function emptyBackup(exportedAt = Date.now()): MediaHistoryBackup {
   return { format: MEDIA_HISTORY_FORMAT, version: MEDIA_HISTORY_VERSION, exportedAt,
-    coverage: ["anime", "manga", "novel"], anime: [], manga: [], novel: [],
+    coverage: ["anime", "manga", "novel"], anime: [], manga: [], novel: [], positions: [],
+    legacyFormat: "moeplay-reading-history",
     errors: { anime: 0, manga: 0, novel: 0, total: 0 } };
+}
+
+/** Keep the compatibility mirror useful without copying arbitrary metadata or credentials. */
+function safeCompatibilityPosition(position: ReadingPosition): ReadingPosition {
+  if (position.kind === "novel") {
+    const book = position.metadata.book as Record<string, unknown> | undefined;
+    return {
+      ...position,
+      metadata: {
+        book: {
+          id: position.contentId,
+          source: position.source,
+          title: position.title,
+          subjects: Array.isArray(book?.subjects) ? book.subjects : [],
+          publicDomain: book?.publicDomain === true,
+          sourceUrl: sanitizeBackupUrl(book?.sourceUrl),
+          ...(asString(book?.coverUrl) ? { coverUrl: sanitizeBackupUrl(book?.coverUrl) } : {}),
+        },
+      },
+    };
+  }
+  return {
+    ...position,
+    metadata: {
+      ...(asString(position.metadata.cover) ? { cover: sanitizeBackupUrl(position.metadata.cover) } : {}),
+    },
+  };
 }
 
 /** Parse supported backup formats while isolating malformed records. */
@@ -274,6 +306,23 @@ export function parseMediaHistoryBackup(input: string | unknown): ParsedBackup {
       for (const item of Array.isArray(raw.anime) ? raw.anime : []) { const row = animeRecord(item); row ? backup.anime.push(row) : skipped += 1; }
       for (const item of Array.isArray(raw.manga) ? raw.manga : []) { const row = mangaRecord(item); row ? backup.manga.push(row) : skipped += 1; }
       for (const item of Array.isArray(raw.novel) ? raw.novel : []) { const row = novelRecord(item); row ? backup.novel.push(row) : skipped += 1; }
+      // A few pre-v0.24 clients only understand the v2 positions mirror. Use it
+      // as a fallback when the typed arrays are absent, never in addition to them.
+      if (!backup.manga.length && !backup.novel.length && Array.isArray(raw.positions)) {
+        for (const item of raw.positions) {
+          if (!validPosition(item)) { skipped += 1; continue; }
+          if (item.kind === "comic") {
+            backup.manga.push({ sourceId: item.source, contentId: item.contentId, title: item.title,
+              cover: asString(item.metadata.cover) ?? null, chapterId: item.chapterId,
+              chapterTitle: item.chapterTitle, pageIndex: item.pageIndex ?? 0, pageId: item.pageId, updatedAt: item.updatedAt });
+          } else {
+            const book = item.metadata.book as Record<string, unknown>;
+            backup.novel.push({ sourceId: item.source, contentId: item.contentId, title: item.title,
+              cover: asString(book.coverUrl) ?? null, chapterId: item.chapterId,
+              chapterTitle: item.chapterTitle, progress: item.progress ?? 0, updatedAt: item.updatedAt });
+          }
+        }
+      }
     } else skipped += 1;
   } else skipped += 1;
   backup.errors = { anime: 0, manga: 0, novel: 0, total: skipped };
@@ -287,6 +336,7 @@ export async function buildMediaHistoryBackup(): Promise<MediaHistoryBackup> {
     if (row) backup.anime.push(row); else backup.errors.anime += 1;
   }
   const snapshot = await readingRepository.positionsForBackup();
+  backup.positions = snapshot.positions.map(safeCompatibilityPosition);
   for (const position of snapshot.positions) {
     if (position.kind === "comic") {
       const row = mangaRecord({ sourceId: position.source, contentId: position.contentId, title: position.title,

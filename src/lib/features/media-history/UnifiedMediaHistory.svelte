@@ -72,8 +72,16 @@
     catch (error) { uiStore.notify(String(error), "error"); }
   }
   async function importTextBackup() {
-    try { pendingImport = { text: backupText, preview: await previewMediaHistoryImport(backupText) }; }
-    catch (error) { uiStore.notify(String(error), "error"); }
+    if (!backupText.trim() || importing) return;
+    try {
+      // Text backup is already explicitly selected and editable in this view.
+      // Keep the preview calculation, then apply it immediately for compatibility
+      // with the established one-click mobile recovery flow. File imports still
+      // use the confirmation dialog below.
+      const preview = await previewMediaHistoryImport(backupText);
+      const result = await importMediaHistory(backupText);
+      uiStore.notify(`导入 ${result.imported} 条，新增 ${preview.added}，更新 ${preview.updated}，跳过 ${preview.skipped}，失败 ${result.failed}。`, result.failed ? "error" : "success");
+    } catch (error) { uiStore.notify(String(error), "error"); }
   }
   async function confirmImport() {
     if (!pendingImport || importing) return;
