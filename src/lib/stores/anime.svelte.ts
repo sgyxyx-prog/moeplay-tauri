@@ -597,18 +597,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
-async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length);
+/** 启动有上限的候选生产队列，但让每个结果在完成时单独可消费。 */
+function concurrentResultPromises<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R>[] {
+  const deferred = items.map(() => {
+    let resolve!: (value: R) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<R>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  });
   let next = 0;
   async function run() {
     while (true) {
       const index = next++;
       if (index >= items.length) return;
-      results[index] = await worker(items[index], index);
+      try { deferred[index].resolve(await worker(items[index], index)); }
+      catch (error) { deferred[index].reject(error); }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, () => run()));
-  return results;
+  for (let i = 0; i < Math.min(Math.max(1, limit), items.length); i++) void run();
+  return deferred.map(item => item.promise);
 }
 
 function currentSeason(): { gte: string; lte: string } {
@@ -1816,8 +1823,9 @@ export const animeStore = {
       pageUrl: string;
     };
 
-    // 搜索与线路解析最多同时运行三个来源，避免一次换源占满网络/WebView。
-    const candidateResults = await mapWithConcurrency(availableRules, 3, async (rule): Promise<Candidate | null> => {
+    // 搜索与线路解析最多同时运行三个来源；每个候选完成后立即进入提取阶段，
+    // 不等待其它慢来源。候选生产继续后台运行，但所有回调仍受代际校验。
+    const candidatePromises = concurrentResultPromises(availableRules, 3, async (rule): Promise<Candidate | null> => {
       try {
         const items = await withTimeout(
           invokeCmd<SearchItem[]>('anime_search', { ruleName: rule.name, keyword: _detailName }),
@@ -1863,32 +1871,23 @@ export const animeStore = {
     });
     if (failoverGen !== _failoverGeneration || playGen !== _playGeneration) return;
 
-    // 一个自动会话最多尝试三个不同来源；候选排序仍由健康度决定。
-    const candidates = candidateResults.filter((c): c is Candidate => c !== null).slice(0, 3);
+    // 自动尝试上限为 3；候选按源健康排序，先完成的候选先尝试。
+    type PendingCandidate = { value: Promise<Candidate | null> };
+    const pendingCandidates: PendingCandidate[] = candidatePromises.map((value) => ({ value }));
+    const maxAttempts = Math.min(availableRules.length, 3);
+    _failoverTotal = maxAttempts;
+    let attempts = 0;
 
-    if (candidates.length === 0) {
-      debugLog("[换源] Phase 1 结束，无可用候选源");
-      _failoverStatus = 'allFailed';
-      _failoverMessage = '所有播放源均失败';
-      _playerExtractStatus = 'error';
-      return;
-    }
-
-    // 优先使用上次成功的源
-    const lastSuccess = getLastSuccessSource(_detailName);
-    if (lastSuccess) {
-      const idx = candidates.findIndex(c => c.rule.name === lastSuccess);
-      if (idx > 0) candidates.unshift(candidates.splice(idx, 1)[0]);
-    }
-
-    debugLog(`[换源] Phase 2: ${candidates.length} 个候选源准备提取`);
-    _failoverTotal = candidates.length;
-
-    // ── Phase 2: 依次提取视频 URL（WebView 资源密集，不并行）────────────
-    for (let i = 0; i < candidates.length; i++) {
+    // ── Phase 2: 候选完成即提取视频 URL（WebView 资源密集，仍串行）──────
+    while (pendingCandidates.length > 0 && attempts < maxAttempts) {
       if (failoverGen !== _failoverGeneration || playGen !== _playGeneration) return;
-      const { rule, searchItem, roads, targetRoad, targetEp, targetRoadIndex, targetEpisodeIndex, pageUrl } = candidates[i];
-      _failoverCurrent = i + 1;
+      const ready = await Promise.race(pendingCandidates.map(async (item) => ({ item, value: await item.value })));
+      const pendingIndex = pendingCandidates.indexOf(ready.item);
+      if (pendingIndex >= 0) pendingCandidates.splice(pendingIndex, 1);
+      if (!ready.value) continue;
+      const { rule, searchItem, roads, targetRoad, targetEp, targetRoadIndex, targetEpisodeIndex, pageUrl } = ready.value;
+      attempts++;
+      _failoverCurrent = attempts;
       _failoverMessage = `正在提取 ${rule.name}（${_failoverCurrent}/${_failoverTotal}）`;
 
       try {
