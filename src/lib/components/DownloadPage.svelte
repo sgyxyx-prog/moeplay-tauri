@@ -29,6 +29,7 @@
   import { Button, Card, Input, SegmentControl, Tag } from "./ui";
   import { PageShell, PageHeader, FilterBar, AsyncState, type ViewState } from "./ui-v2";
   import { offlineApi, type OfflineChapter, type OfflineState } from "../api/offline";
+  import { clearOfflineFailure, offlineFailure } from "../features/offline/runtime";
 
   type DownloadEvidence = {
     accepted: boolean;
@@ -91,7 +92,7 @@
     try { downloads = await getDownloads() as DownloadProjection[]; } catch { downloads = []; }
     try { animeDownloads = await animeGetDownloads(); } catch { animeDownloads = []; }
     try {
-      offlineChapters = await offlineApi.list();
+      offlineChapters = (await offlineApi.list()).map((chapter) => chapter.error ? chapter : { ...chapter, error: offlineFailure(chapter.offlineChapterKey) });
       const stats = await offlineApi.stats();
       offlineBytes = stats.bytes;
       offlineError = "";
@@ -291,7 +292,7 @@
   }
 
   async function controlOffline(chapter: OfflineChapter, action: "pause" | "resume" | "retry" | "cancel" | "delete") {
-    try { await offlineApi.control({ chapterKey: chapter.offlineChapterKey, action }); await refresh(); }
+    try { await offlineApi.control({ chapterKey: chapter.offlineChapterKey, action }); if (action !== "pause") clearOfflineFailure(chapter.offlineChapterKey); await refresh(); }
     catch (error) { offlineError = String(error); }
   }
 </script>

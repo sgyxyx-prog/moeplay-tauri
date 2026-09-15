@@ -1,6 +1,6 @@
-import { offlineEnqueue, offlineSupplyChapter, type OfflineChapter, type OfflineContentType, type OfflineResourceInput } from "../../api/offline";
+import { offlineControl, offlineEnqueue, offlineSupplyChapter, type OfflineChapter, type OfflineContentType, type OfflineResourceInput } from "../../api/offline";
 import { selectOfflineChapters, type ChapterLike } from "./model";
-import { OFFLINE_PARSE_CONCURRENCY } from "./runtime";
+import { clearOfflineFailure, OFFLINE_PARSE_CONCURRENCY, rememberOfflineFailure } from "./runtime";
 
 export interface OfflineSupplyPayload { body?: string; resources?: OfflineResourceInput[]; }
 export interface OfflineChapterResolver<T extends ChapterLike> { (chapter: T): Promise<OfflineSupplyPayload>; }
@@ -32,7 +32,15 @@ export async function scheduleOfflineChapters<T extends ChapterLike>(input: {
         const payload = await input.resolve(chapter);
         const saved = await offlineSupplyChapter({ chapterKey: result[index].offlineChapterKey, ...payload });
         result[index] = saved;
+        clearOfflineFailure(result[index].offlineChapterKey);
       } catch (error) {
+        const chapterKey = result[index]?.offlineChapterKey;
+        if (chapterKey) {
+          rememberOfflineFailure(chapterKey, error);
+          // A resolver failure must be retryable from DownloadPage instead of
+          // leaving a task spinning in the queued state forever.
+          void offlineControl({ chapterKey, action: "pause" }).catch(() => {});
+        }
         failures.push({ chapterId: chapter.id, error: errorText(error) });
       }
     }
