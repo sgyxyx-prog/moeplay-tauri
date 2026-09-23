@@ -338,7 +338,7 @@
   @media(max-height:550px) {.filters {gap:4px;}.filters select {max-width:110px;}}
   @media(prefers-reduced-motion:reduce) {.handheld-shell * {scroll-behavior:auto!important;}}
   /* 清透掌机视觉层。动态 --hh-accent 由壳层统一下发。 */
-  .handheld-shell {--hh-muted:#657085;--hh-action:color-mix(in srgb,var(--hh-accent) 70%,#403198);background:linear-gradient(155deg,#fafaff,#f4f5fa 58%,#edeffa);color:#202535;}
+  .handheld-shell {--hh-muted:#657085;--hh-action:color-mix(in srgb,var(--hh-accent) 70%,#403198);--accent:var(--hh-action);--accent-ring:color-mix(in srgb,var(--hh-action) 46%,transparent);--bg-void:#f4f5fa;background:linear-gradient(155deg,#fafaff,#f4f5fa 58%,#edeffa);color:#202535;}
   .handheld-shell.light {background:#f4f5fa;}
   .header {background:#ffffffdc;border-bottom:1px solid #dfe1ec;backdrop-filter:blur(14px);padding:10px calc(var(--hh-gap)*1.75);gap:12px;}
   .light .header,.light .hints {backdrop-filter:none;}
