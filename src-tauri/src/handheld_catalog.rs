@@ -194,7 +194,10 @@ pub async fn handheld_bangumi_search(keyword: String) -> Result<Vec<WorkCandidat
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .user_agent("MoePlay/0.24.0 (+https://github.com/sgyxyx-prog/moeplay-tauri)")
+        .user_agent(format!(
+            "MoePlay/{} (+https://github.com/sgyxyx-prog/moeplay-tauri)",
+            env!("CARGO_PKG_VERSION")
+        ))
         .build()
         .map_err(|e| e.to_string())?;
     let response = client
@@ -281,7 +284,10 @@ pub async fn handheld_bangumi_relations(subject_id: i64) -> Result<Vec<WorkRelat
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .user_agent("MoePlay/0.24.0 (+https://github.com/sgyxyx-prog/moeplay-tauri)")
+        .user_agent(format!(
+            "MoePlay/{} (+https://github.com/sgyxyx-prog/moeplay-tauri)",
+            env!("CARGO_PKG_VERSION")
+        ))
         .build()
         .map_err(|e| e.to_string())?;
     let url = format!("https://api.bgm.tv/v0/subjects/{subject_id}/subjects");
