@@ -4,11 +4,9 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_BUDGET = Object.freeze({
-  // v0.24.0 Windows 掌机预览: 直接引入 TanStack Virtual，并为掌机壳、
-  // 章节面板和媒体恢复新增按需块。origin/master 的同环境基线为
-  // 3,078,239 B / 97,474 B Comic；保持约 22 KB / 5 KB 的缓冲，避免
-  // 未来把整个预览功能无界地纳入包体。
-  totalJavaScriptBytes: 3_200_000,
+  // 作品志预览新增专题编排与操作轮盘后实测总量 3,213,078 B；
+  // 留约 37 KB 缓冲，仍对后续增长设置明确上限。
+  totalJavaScriptBytes: 3_250_000,
   largestChunkBytes: 1_100_000,
   animeChunkBytes: 700_000,
   comicChunkBytes: 110_000,
