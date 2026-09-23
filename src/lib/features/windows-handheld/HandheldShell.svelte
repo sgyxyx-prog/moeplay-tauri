@@ -26,6 +26,7 @@
   import { rankPaletteEntries } from "../palette/matcher";
   import { loadAdaptiveChromaPalette } from "../media-workspace/chroma/imagePalette";
   import Icon from "../../components/Icon.svelte";
+  import WorkFallback from "./WorkFallback.svelte";
 
   let { children, taskActiveCount = 0, taskFailedCount = 0 }: { children: Snippet; taskActiveCount?: number; taskFailedCount?: number } = $props();
   const tabs: { id: HandheldTab; label: string }[] = [{ id: "continue", label: "继续" }, { id: "library", label: "藏馆" }, { id: "discover", label: "发现" }, { id: "mine", label: "我的" }];
@@ -253,10 +254,10 @@
     {:else if tab === "continue"}
       <EditorialContinue items={rows} {selected} recentOffset={snapshot.recentScrollOffset} onrecentScroll={offset => handheldSession.patch({ recentScrollOffset: offset })} onselect={select} onopen={item => void handheldContentStore.activate(item)} onmore={() => showPanel("wheel")} onalbum={openAlbum} onlibrary={() => switchTab("library")} onsearch={() => showPanel("search")} onimport={() => void gameStore.importGame()} />
     {:else if tab === "library" && snapshot.libraryView === "albums"}
-      <div class="library-switch"><button onclick={() => handheldSession.patch({ libraryView: "all" })}>全部作品</button><button class="active">我的专题</button></div>
-      <AlbumView items={handheldContentStore.library} activeAlbumId={snapshot.albumId} activeMemberId={snapshot.albumMemberId} onalbum={id => { albumFocusedItem = null; handheldSession.patch({ albumId: id, albumMemberId: null }); }} onmember={id => handheldSession.patch({ albumMemberId: id })} onselect={item => { albumFocusedItem = item; if (item) select(item); }} onopen={item => void handheldContentStore.activate(item)} onsearch={searchFor} />
+      {#if !snapshot.albumId}<div class="library-switch"><button onclick={() => handheldSession.patch({ libraryView: "all" })}>全部作品</button><button class="active">我的专题</button></div>{/if}
+      <AlbumView items={handheldContentStore.library} activeAlbumId={snapshot.albumId} activeMemberId={snapshot.albumMemberId} compact={size.height < 560} onalbum={id => { albumFocusedItem = null; handheldSession.patch({ albumId: id, albumMemberId: null }); }} onmember={id => handheldSession.patch({ albumMemberId: id })} onselect={item => { albumFocusedItem = item; if (item) select(item); }} onopen={item => void handheldContentStore.activate(item)} onsearch={searchFor} />
     {:else}
-      <div class="section-heading"><div><h1>{tab === "library" ? "全部作品" : "发现"}</h1></div><span>{tab === "discover" ? snapshot.query || "按名称搜索作品" : `${rows.length} 项内容`}</span></div>
+      <div class="section-heading" class:short-heading={size.height < 560}><div><h1>{tab === "library" ? "全部作品" : "发现"}</h1></div><span>{tab === "discover" ? snapshot.query || "按名称搜索作品" : `${rows.length} 项内容`}</span></div>
       {#if tab === "library"}<div class="library-switch"><button class="active">全部作品</button><button onclick={() => handheldSession.patch({ libraryView: "albums" })}>我的专题 · {catalogStore.albums.length}</button></div>{/if}
       <div class="filters">
         <div class="kind-tabs" aria-label="内容分类">{#each kinds as kind}<button class:active={snapshot.kind === kind.id} aria-pressed={snapshot.kind === kind.id} onclick={() => handheldSession.patch({ kind: kind.id, scrollOffset: 0 })}>{kind.label}</button>{/each}</div>
@@ -270,7 +271,7 @@
             {#snippet children(item)}
               <div class="gallery-card" class:selected={selected?.id === item.id}>
                 <button class="content-row" class:selected={selected?.id === item.id} data-focus-key={item.id} aria-label={item.title + "，" + item.progressLabel} onclick={() => select(item)} ondblclick={() => void handheldContentStore.activate(item)} onfocus={() => select(item)}>
-                  <span class="gallery-art">{#if item.cover?.src && !failedImages.includes(item.cover.src)}<img src={item.cover.src} alt="" loading="lazy" decoding="async" onerror={() => imageFailed(item.cover!.src)} />{:else}<Icon name={item.kind === "game" ? "gamepad" : item.kind === "anime" ? "film" : item.kind === "comic" ? "image" : "book"} size={42} stroke={1.1} />{/if}</span>
+                  <span class="gallery-art">{#if item.cover?.src && !failedImages.includes(item.cover.src)}<img src={item.cover.src} alt="" loading="lazy" decoding="async" onerror={() => imageFailed(item.cover!.src)} />{:else}<WorkFallback title={item.title} kind={item.kind} />{/if}</span>
                   <span class="row-copy"><small>{labels[item.kind]}{item.favorite ? " · 已收藏" : ""}</small><strong>{item.title}</strong><span>{item.progressLabel}</span></span>
                 </button>
                 {#if selected?.id === item.id}<button class="card-action" disabled={!item.actions.some(action => (action.id === "open" || action.id === "launch") && action.enabled)} onclick={() => void handheldContentStore.activate(item)}><Icon name="play" size={16} />{item.primaryLabel}</button>{/if}
@@ -292,7 +293,7 @@
     {:else if panel === "album-picker"}
       {#if featured}<p>将《{featured.title}》加入个人专题。</p>{/if}<div class="album-picks">{#each catalogStore.albums as album (album.id)}<button onclick={() => void addToAlbum(album.id)}>{album.title}<small>{album.members.length} 部作品</small></button>{/each}</div><button onclick={() => { dismissPanel(); switchTab("library"); handheldSession.patch({ libraryView: "albums", albumId: null }); }}>创建新专题</button>
     {:else if panel === "quick"}
-      <label class="field">显示舒适度 <strong>{displayProfile.profile.comfort}%</strong><input type="range" min="90" max="130" step="5" value={displayProfile.profile.comfort} oninput={e => displayProfile.update({ comfort: Number(e.currentTarget.value) })} /></label><label class="field">内容密度<select value={displayProfile.profile.density} onchange={e => displayProfile.update({ density: e.currentTarget.value as "comfortable" | "compact" })}><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></label><label class="check"><input type="checkbox" checked={displayProfile.profile.lightEffects} onchange={e => displayProfile.update({ lightEffects: e.currentTarget.checked })} />轻量效果</label><p>仅调整界面；分辨率变化不会退出掌机模式。</p><button onclick={() => { dismissPanel(); navigateTo("tasks"); }}>查看任务 · {taskActiveCount} 项进行中</button><button onclick={() => { dismissPanel(); displayProfile.update({ mode: "desktop" }); }}>切回原界面</button>
+      <div class="quick-controls"><label class="field">显示舒适度 <strong>{displayProfile.profile.comfort}%</strong><input type="range" min="90" max="130" step="5" value={displayProfile.profile.comfort} oninput={e => displayProfile.update({ comfort: Number(e.currentTarget.value) })} /></label><label class="field">内容密度<select value={displayProfile.profile.density} onchange={e => displayProfile.update({ density: e.currentTarget.value as "comfortable" | "compact" })}><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></label><label class="check"><input type="checkbox" checked={displayProfile.profile.lightEffects} onchange={e => displayProfile.update({ lightEffects: e.currentTarget.checked })} />轻量效果</label><p>仅调整界面；分辨率变化不会退出掌机模式。</p><div class="quick-links"><button onclick={() => { dismissPanel(); navigateTo("tasks"); }}>查看任务 · {taskActiveCount} 项进行中</button><button onclick={() => { dismissPanel(); displayProfile.update({ mode: "desktop" }); }}>切回原界面</button></div></div>
     {:else if featured}
       <p>{featured.progressLabel}</p><p>{featured.description || featured.subtitle}</p><div class="panel-actions"><button class="primary" disabled={!primary?.enabled} onclick={runPrimary}>{featured.primaryLabel}</button>{#each featured.actions.filter(a => a.id !== "launch" && a.id !== "open") as action}<button disabled={!action.enabled} onclick={() => void action.run()}>{action.label}</button>{/each}<button onclick={() => showPanel("album-picker")}>加入专题</button><button onclick={() => { const item = featured; dismissPanel(); if (item) void handheldContentStore.openDetails(item); }}>详情与章节</button></div><p>选集、线路和阅读偏好在播放或阅读中的内容面板里调整。</p>
     {/if}
@@ -329,25 +330,29 @@
   .field {display:flex;flex-direction:column;gap:12px;margin:0 0 20px;}.field input:not([type=range]) {min-height:48px;border-radius:10px;padding:12px;width:100%;box-sizing:border-box;}
   .field input[type=range] {min-height:44px;width:100%;accent-color:var(--hh-action);}.check {display:flex;gap:12px;align-items:center;min-height:48px;}.check input {width:24px;height:24px;}
   .keyboard-settings {display:flex;gap:8px;flex-wrap:wrap;margin-top:20px;}.keyboard-settings button {font-size:14px;}
+  .quick-controls {display:grid;align-content:start;gap:10px;}.quick-controls .field {gap:5px;margin:0;}.quick-controls p {margin:0;}.quick-links {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}.quick-links button {padding-inline:8px;}
   .local-results,.album-picks {display:grid;gap:5px;max-height:34vh;overflow:auto;margin:14px 0;padding:10px 0;}
   .local-results button,.album-picks button {display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;}
   .local-results strong {flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .sr-only {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
   :global(.handheld-drawer) {bottom:var(--hh-keyboard,0)!important;font-size:var(--hh-body,18px);max-height:100dvh;}
-  .compact .shoulder-hint {display:none;}.compact .filters {flex-wrap:wrap;}.compact .kind-tabs {flex-basis:100%;}.compact .hints {gap:10px;padding:4px 10px;}.compact :global(.handheld-drawer) {width:100%!important;max-width:100%!important;}
+  .compact .shoulder-hint {display:none;}.compact .filters {gap:4px;}.compact .kind-tabs {flex:1 1 auto;}.compact .kind-tabs button {padding-inline:9px;}.compact .hints {gap:10px;padding:4px 10px;}.compact :global(.handheld-drawer) {width:100%!important;max-width:100%!important;}
   @media(max-height:550px) {.filters {gap:4px;}.filters select {max-width:110px;}}
   @media(prefers-reduced-motion:reduce) {.handheld-shell * {scroll-behavior:auto!important;}}
   /* 清透掌机视觉层。动态 --hh-accent 由壳层统一下发。 */
-  .handheld-shell {--hh-muted:#657085;--hh-action:color-mix(in srgb,var(--hh-accent) 70%,#403198);--accent:var(--hh-action);--accent-ring:color-mix(in srgb,var(--hh-action) 46%,transparent);--bg-void:#f4f5fa;background:linear-gradient(155deg,#fafaff,#f4f5fa 58%,#edeffa);color:#202535;}
+  .handheld-shell {--hh-muted:#657085;--hh-action:color-mix(in srgb,var(--hh-accent) 70%,#403198);--accent:var(--hh-action);--accent-ring:color-mix(in srgb,var(--hh-action) 46%,transparent);--bg-void:#f2f3f7;background:linear-gradient(155deg,#f8f9fc,#f2f3f7 58%,#eceef5);color:#202535;}
   .handheld-shell.light {background:#f4f5fa;}
-  .header {background:#ffffffdc;border-bottom:1px solid #dfe1ec;backdrop-filter:blur(14px);padding:10px calc(var(--hh-gap)*1.75);gap:12px;}
+  .header {background:#151d30;border-bottom:1px solid #35415d;backdrop-filter:blur(14px);padding:8px calc(var(--hh-gap)*1.75);gap:12px;}
   .light .header,.light .hints {backdrop-filter:none;}
-  .brand {font-size:22px;color:#5748ad;letter-spacing:-.045em;white-space:nowrap;}.brand span {color:#273047;}
+  .brand {font-size:22px;color:#d4caff;letter-spacing:-.045em;white-space:nowrap;}.brand span {color:#f5f6fc;}
   .header nav {justify-content:center;gap:4px;}
-  .header nav button {border-radius:999px;min-height:44px;padding:8px 19px;font-weight:720;background:transparent;color:#566174;}
-  .header nav button.active,.header nav button.active:hover {color:#4d3e9c;background:#edeafb;box-shadow:inset 0 0 0 1px #b6afe8;}
+  .header nav button {border-radius:999px;min-height:44px;padding:8px 19px;font-weight:720;background:transparent;color:#cbd1e0;}
+  .header nav button.active,.header nav button.active:hover {color:#251f45;background:#eeeaff;box-shadow:none;}
   .handheld-shell button,.handheld-shell select {border-radius:12px;color:#202535;background:#ffffffbc;border:1px solid #d8dae7;}
   .handheld-shell button:hover {background:#f0eefb;}
+  .handheld-shell .header nav button {border:0;background:transparent;color:#cbd1e0;}
+  .handheld-shell .header nav button.active,.handheld-shell .header nav button.active:hover {background:#eeeaff;color:#251f45;}
+  .handheld-shell .icon-button {background:#ffffff1a;border:1px solid #ffffff45;color:#f2f3fb;}
   .handheld-shell button:focus-visible,.handheld-shell select:focus-visible,.handheld-shell input:focus-visible {outline:3px solid #5849b4;outline-offset:2px;}
   .icon-button {display:grid;place-items:center;padding:0;min-width:var(--hh-target);background:#fff;}
   .body {padding:calc(var(--hh-gap)*1.1) calc(var(--hh-gap)*1.75);gap:calc(var(--hh-gap)*.85);}
@@ -363,8 +368,8 @@
   .gallery-card.selected {border:2px solid var(--hh-action);box-shadow:0 8px 22px #5d52a62c;}
   .content-row,.content-row.selected {width:100%;height:100%;min-height:0;display:flex;flex-direction:column;align-items:stretch;gap:0;text-align:left;padding:7px;border:0;border-radius:14px;background:transparent;box-shadow:none;}
   .content-row:hover,.content-row.selected:hover {background:transparent;}
-  .gallery-art {display:grid;place-items:center;flex:1;min-height:0;overflow:hidden;border-radius:11px;background:linear-gradient(135deg,#ebe8f9,#f7f6fb 66%,#eaf0f8);color:#7d70be;}
-  .gallery-art img {width:100%;height:100%;object-fit:contain;border-radius:0;}
+  .gallery-art {display:grid;place-items:center;flex:1;min-height:0;overflow:hidden;border-radius:11px;background:#24304b;color:#fff;}
+  .gallery-art img {width:100%;height:100%;object-fit:cover;border-radius:0;}
   .row-copy {height:64px;flex:none;padding:6px 2px 0;display:flex;flex-direction:column;gap:0;box-sizing:border-box;}
   .row-copy small {color:#6252b4;font-size:12px;}.row-copy strong {color:#273047;font-weight:740;}.row-copy>span {color:#687386;}
   .card-action {position:absolute;top:calc(100% - 111px);right:12px;min-height:44px;max-width:calc(100% - 24px);display:flex;align-items:center;gap:4px;padding:6px 10px;color:#fff!important;background:var(--hh-action)!important;border:0!important;border-radius:10px!important;font-size:13px;font-weight:730;box-shadow:0 4px 12px #3d318665;}
@@ -372,17 +377,17 @@
   .handheld-shell .primary:hover {background:color-mix(in srgb,var(--hh-action) 82%,#261b67);}
   .tools {grid-template-columns:repeat(3,minmax(0,1fr));}.tools button {background:#fff;border-color:#e1e3ee;border-radius:16px;box-shadow:0 3px 14px #2d38570d;}
   .tools small {color:#697186;}.empty-symbol {color:#7464c4;}.empty p,.handheld-shell p {color:#657085;}
-  .hints {min-height:54px;background:#ffffffdc;border-top:1px solid #dfe1eb;backdrop-filter:blur(14px);gap:18px;}
-  .hints kbd {border:1px solid #b9b2df;color:#5647a7;border-radius:7px;background:#f4f1ff;}
-  .hints button {border:0;background:transparent;color:#5748a7;}
+  .hints {min-height:54px;background:#151d30;border-top:1px solid #35415d;backdrop-filter:blur(14px);gap:18px;color:#e4e8f1;}
+  .hints kbd {border:1px solid #7f89a1;color:#e9e5ff;border-radius:7px;background:#36405a;}
+  .handheld-shell .hints button {border:0;background:transparent;color:#e9e5ff;}
   .inner-heading {background:#f4f5fa;color:#202535;border-bottom:1px solid #e1e3ef;}
   .handheld-shell .field input:not([type=range]),.handheld-shell .field select {background:#fff;color:#202535;border-color:#d5d9e7;}
   :global(.handheld-drawer) {background:#fbfbff!important;color:#202535!important;border-left:1px solid #dfe1eb!important;box-shadow:-16px 0 42px #34385c2e;width:min(540px,48vw)!important;}
   :global(.handheld-drawer button),:global(.handheld-drawer select),:global(.handheld-drawer input) {color:#202535;background:#fff;border-color:#d5d9e7;border-radius:12px;}
-  :global(.handheld-drawer .v2-drawer__close) {min-width:44px;min-height:44px;}
+  :global(.handheld-drawer .v2-drawer__close) {width:44px;min-width:44px;min-height:44px;border:1px solid #dce0e9;border-radius:12px;background:#f2f3f8;color:#263049;}
   :global(.handheld-drawer .primary) {background:var(--hh-action)!important;color:#fff!important;}
   .local-results,.album-picks {border-top:1px solid #dfe1ec;}.local-results>span {color:#594aae;font-weight:700;}.local-results small,.album-picks small {color:#657085;}
   .local-results button,.album-picks button {min-height:52px;border-radius:12px;background:#fff;}
   @media(max-width:960px) {.header {gap:5px;padding:7px 10px;}.header nav button {padding:7px 11px;}.brand {display:none;}.body:not(.inner) {padding:10px;gap:8px;}.gallery-card {border-radius:13px;}.tools {grid-template-columns:repeat(2,minmax(0,1fr));}}
-  @media(max-height:550px) {.hints {min-height:44px;}.section-heading {min-height:36px;}.header nav button {min-height:44px;}}
+  @media(max-height:550px) {.hints {min-height:44px;}.section-heading {min-height:36px;}.header nav button {min-height:44px;}.short-heading {display:none;}.filters {min-width:0;}.filters label {flex:none;}.filters select {max-width:96px;}.compact .kind-tabs button {padding-inline:8px;}.quick-controls {gap:5px;}.quick-controls .field input[type=range] {min-height:32px;}.quick-controls .check {min-height:36px;}.quick-controls p {font-size:12px;}}
 </style>

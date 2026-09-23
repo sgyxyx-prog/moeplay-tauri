@@ -8,11 +8,12 @@
   import { closeOverlay, closeTopOverlay, openOverlay, routerStore } from "../../stores/router.svelte";
   import { showSystemKeyboard } from "./native";
   import VirtualList from "./VirtualList.svelte";
+  import WorkFallback from "./WorkFallback.svelte";
   import { catalogStore, memberOf, relationMember, type AlbumMember, type WorkRelation } from "./catalog.svelte";
   import type { HandheldContentItem } from "./types";
 
-  let { items, activeAlbumId, activeMemberId, onalbum, onmember, onselect, onopen, onsearch }:
-    { items: HandheldContentItem[]; activeAlbumId: string | null; activeMemberId: string | null; onalbum: (id: string | null) => void; onmember: (id: string | null) => void;
+  let { items, activeAlbumId, activeMemberId, compact = false, onalbum, onmember, onselect, onopen, onsearch }:
+    { items: HandheldContentItem[]; activeAlbumId: string | null; activeMemberId: string | null; compact?: boolean; onalbum: (id: string | null) => void; onmember: (id: string | null) => void;
       onselect: (item: HandheldContentItem | null) => void; onopen: (item: HandheldContentItem) => void;
       onsearch: (title: string, kind: AlbumMember["kind"]) => void } = $props();
 
@@ -200,7 +201,7 @@
               <img src={entry.cover} alt="" loading="lazy" style:object-position={entry.focalX * 100 + "% " + entry.focalY * 100 + "%"} onerror={() => imageFailed(entry.cover!)} />
             {:else if collage(entry.members).length}
               <span class="collage">{#each collage(entry.members) as src}<img src={src} alt="" loading="lazy" onerror={() => imageFailed(src)} />{/each}</span>
-            {:else}<Icon name="collection" size={62} stroke={1} />{/if}
+            {:else}<WorkFallback title={entry.title} kind="album" />{/if}
           </span>
           <span class="tile-copy"><small>{entry.pinned ? "已置顶 · " : ""}{entry.members.length} 部作品</small><strong>{entry.title}</strong><em>{entry.description || "打开专题"}</em></span>
         </button>
@@ -208,13 +209,13 @@
     </div>
   </section>
 {:else}
-  <section class="album-detail" aria-label={ "专题 " + album.title }>
+  <section class="album-detail" class:compact aria-label={ "专题 " + album.title }>
     <div class="album-cover">
       {#if album.cover && !failedImages.includes(album.cover)}
         <img class="cover-image" src={album.cover} alt="" style:object-position={album.focalX * 100 + "% " + album.focalY * 100 + "%"} onerror={() => imageFailed(album.cover!)} />
       {:else if collage(album.members).length}
         <div class="cover-collage">{#each collage(album.members) as src}<img src={src} alt="" onerror={() => imageFailed(src)} />{/each}</div>
-      {:else}<div class="cover-fallback"><Icon name="collection" size={100} stroke={.8} /></div>{/if}
+      {:else}<div class="cover-fallback"><WorkFallback title={album.title} kind="album" /></div>{/if}
       <div class="cover-wash"></div>
       <div class="cover-content"><button class="back-link" onclick={() => { onalbum(null); selectedMemberId = null; confirmDelete = false; }}><Icon name="arrowLeft" size={17} />我的专题</button><span class="eyebrow">{album.members.length} 部作品</span><h2>{album.title}</h2><p>{album.description || "把喜欢的作品编成自己的故事。"} </p></div>
       <button class="edit-cover" onclick={() => openAlbumPanel("edit")}><Icon name="gear" size={18} />编辑专题</button>
@@ -222,7 +223,7 @@
     <div class="album-main">
       <div class="section-title"><h3>作品目录</h3><button onclick={() => openAlbumPanel("edit")}><Icon name="plus" size={18} />添加作品</button></div>
       {#if album.members.length}
-        <div class="member-list"><VirtualList items={album.members} itemKey={member => member.id} estimateSize={128} focusId={selectedMember?.id} label="专题作品目录" onselect={selectMember}>
+        <div class="member-list"><VirtualList items={album.members} itemKey={member => member.id} estimateSize={compact ? 88 : 128} focusId={selectedMember?.id} label="专题作品目录" onselect={selectMember}>
           {#snippet children(member, index)}
             <button class="member" class:selected={selectedMember?.id === member.id} class:drop-target={dropMemberId === member.id} data-album-member={member.id} draggable="true"
               ondragstart={event => { draggedMemberId = member.id; event.dataTransfer?.setData("text/plain", member.id); }}
@@ -233,7 +234,7 @@
               onpointerup={finishTouchReorder} onpointercancel={() => { draggedMemberId = null; dropMemberId = null; }}
               onclick={() => selectMember(member)} ondblclick={() => { const item = member.contentId ? localItems.get(member.contentId) : undefined; if (item) onopen(item); }}>
               <span class="chapter-index" title="触屏按住拖动排序">{index + 1}</span>
-              <span class="member-art">{#if member.cover && !failedImages.includes(member.cover)}<img src={member.cover} alt="" loading="lazy" onerror={() => imageFailed(member.cover!)} />{:else}<Icon name="book" size={34} />{/if}</span>
+              <span class="member-art">{#if member.cover && !failedImages.includes(member.cover)}<img src={member.cover} alt="" loading="lazy" onerror={() => imageFailed(member.cover!)} />{:else}<WorkFallback title={member.title} kind={member.kind} />{/if}</span>
               <span class="member-copy"><small>{member.group || member.relation || "收录作品"} · {kindLabels[member.kind]}</small><strong>{member.title}</strong><em>{member.contentId && localItems.get(member.contentId) ? localItems.get(member.contentId)?.progressLabel : "仅资料 · 尚未绑定可用内容"}</em>{#if member.note}<span class="member-note">“{member.note}”</span>{/if}</span>
               <Icon name="arrowRight" size={18} />
             </button>
@@ -340,4 +341,26 @@
   .sr-only {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
   @media(max-width:960px) {.album-detail {overflow:auto;}.album-cover {min-height:175px;height:210px;}.album-main {flex:none;min-height:280px;}.member-list {height:320px;flex:none;}.cover-content {max-width:74%;}.selected-actions {flex-wrap:wrap;}.selected-actions>span {flex-basis:100%;}:global(.album-drawer) {width:100%!important;max-width:100%!important;}}
   @media(max-height:550px) {.album-cover {height:145px;min-height:145px;}.cover-content h2 {font-size:24px;}.member-list {min-height:160px;}}
+  /* Keep the selected work and its action visible in a 640×400 logical client area. */
+  .tile-art {background:#24304b;color:#fff;}
+  .album-cover {background:#1b2844;}
+  .cover-wash {background:linear-gradient(90deg,#162036f5 0%,#162036de 43%,#16203618 83%);}
+  .cover-content h2 {color:#fff;}.cover-content p {color:#dfe4f1;}.cover-content .eyebrow {color:#d5caff;}.back-link {color:#eeeaff;}
+  .member-art img {object-fit:cover;}
+  .album-detail.compact {overflow:hidden;gap:7px;}
+  .album-detail.compact .album-cover {height:78px;min-height:78px;border-radius:14px;}
+  .album-detail.compact .cover-content {width:100%;max-width:calc(100% - 150px);height:100%;box-sizing:border-box;justify-content:center;gap:0;padding:4px 12px;}
+  .album-detail.compact .cover-content .eyebrow,.album-detail.compact .cover-content p {display:none;}
+  .album-detail.compact .cover-content h2 {font-size:21px;white-space:nowrap;display:block;text-overflow:ellipsis;}
+  .album-detail.compact .back-link {min-height:32px;padding:0;font-size:13px;}
+  .album-detail.compact .edit-cover {right:8px;bottom:17px;min-height:44px;}
+  .album-detail.compact .album-main {flex:1;min-height:0;gap:5px;}
+  .album-detail.compact .section-title {min-height:44px;}.album-detail.compact .section-title h3 {font-size:18px;}
+  .album-detail.compact .member-list {flex:1;height:auto;min-height:0;}
+  .album-detail.compact .member-art {width:49px;height:66px;}
+  .album-detail.compact .member {gap:6px;padding:5px 8px;}
+  .album-detail.compact .chapter-index {width:25px;min-width:25px;}
+  .album-detail.compact .selected-actions {min-height:48px;flex-wrap:nowrap;padding:3px 5px;gap:4px;}
+  .album-detail.compact .selected-actions>span {display:none;}
+  .album-detail.compact .selected-actions button {flex:1;min-width:0;padding-inline:5px;font-size:12px;}
 </style>

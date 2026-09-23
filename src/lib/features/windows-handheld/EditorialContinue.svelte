@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "../../components/Icon.svelte";
   import VirtualList from "./VirtualList.svelte";
+  import WorkFallback from "./WorkFallback.svelte";
   import { catalogStore } from "./catalog.svelte";
   import { displayProfile } from "./profile.svelte";
   import type { HandheldContentItem } from "./types";
@@ -29,7 +30,7 @@
         <img class:wide={wideArt} class="stage-art" src={backdropSrc} alt="" decoding="async"
           onerror={() => imageFailed(backdropSrc)} />
       {:else}
-        <div class="stage-pattern" aria-hidden="true"><Icon name={kindIcon[selected.kind]} size={140} stroke={0.7} /></div>
+        <div class="stage-pattern" aria-hidden="true"><span>{kinds[selected.kind]}</span><strong>{Array.from(selected.title).slice(0, 2).join("")}</strong><i></i></div>
       {/if}
       <div class="stage-copy">
         <span class="type-pill"><Icon name={kindIcon[selected.kind]} size={17} />{kinds[selected.kind]} · 接着上次</span>
@@ -55,7 +56,7 @@
               <span class="thumb">
                 {#if item.cover?.src && !failedImages.includes(item.cover.src)}
                   <img src={item.cover.src} alt="" loading="lazy" decoding="async" onerror={() => imageFailed(item.cover!.src)} />
-                {:else}<Icon name={kindIcon[item.kind]} size={38} stroke={1.1} />{/if}
+                {:else}<WorkFallback title={item.title} kind={item.kind} />{/if}
               </span>
               <span class="recent-title">{item.title}</span><small>{item.progressLabel}</small>
             </button>
@@ -81,24 +82,25 @@
 <style>
   .immersive-home {min-height:0;height:100%;overflow:auto;display:flex;flex-direction:column;gap:20px;scrollbar-width:thin;padding:2px 2px 18px;}
   .feature-stage {position:relative;isolation:isolate;flex:none;min-height:300px;height:clamp(300px,43vh,520px);overflow:hidden;border-radius:24px;
-    background:radial-gradient(circle at 80% 35%,color-mix(in srgb,var(--hh-accent) 18%,white),transparent 47%),linear-gradient(125deg,#fcfbff,#e9eaf5);
-    box-shadow:0 18px 42px #35405a16;border:1px solid #8589ad2b;}
-  .feature-stage::after {content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#fafaff 0%,#fafaffeb 25%,#fafaff9c 46%,transparent 74%);}
+    background:radial-gradient(circle at 82% 20%,color-mix(in srgb,var(--hh-accent) 42%,#415875),transparent 48%),linear-gradient(120deg,#121b31,#273451 70%,#596380);
+    box-shadow:0 18px 42px #22304a29;border:1px solid #4d5873;}
+  .feature-stage::after {content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#111a30 0%,#111a30ee 28%,#111a30ad 49%,transparent 79%);}
   .stage-art {position:absolute;right:3%;top:0;height:100%;width:52%;object-fit:contain;object-position:center right;filter:drop-shadow(0 18px 24px #34374726);}
-  .stage-art.wide {right:0;width:100%;object-fit:cover;object-position:center;mask-image:linear-gradient(to right,transparent 32%,#000 78%);}
-  .stage-pattern {position:absolute;right:6%;top:8%;bottom:8%;width:45%;display:grid;place-items:center;color:color-mix(in srgb,var(--hh-accent) 35%,white);
-    border:1px solid #9b9fbf3b;border-radius:32px;background:linear-gradient(150deg,#ffffff80,#e7e9f562);}
+  .stage-art.wide {right:0;width:100%;object-fit:cover;object-position:center;mask-image:linear-gradient(to right,transparent 20%,#000 72%);}
+  .stage-pattern {position:absolute;right:5%;top:8%;bottom:8%;width:44%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;overflow:hidden;border:1px solid #ffffff3a;border-radius:28px;background:linear-gradient(145deg,#a8b2d126,#d5aab32d);color:#fff;transform:rotate(2deg);}
+  .stage-pattern::before {content:"";position:absolute;width:65%;aspect-ratio:1;border:1px solid #ffffff55;border-radius:50%;box-shadow:0 0 0 22px #ffffff13,0 0 0 46px #ffffff0d;}
+  .stage-pattern span {z-index:1;font-size:13px;font-weight:800;letter-spacing:.24em;}.stage-pattern strong {z-index:1;font-size:clamp(56px,8vw,150px);letter-spacing:-.14em;line-height:1;text-shadow:0 10px 25px #111a3066;}.stage-pattern i {z-index:1;width:18%;height:3px;background:#ffffffce;}
   .stage-copy {position:relative;z-index:1;width:min(54%,600px);height:100%;padding:clamp(22px,3vw,48px);box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:clamp(10px,2vh,20px);}
-  .type-pill {display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:#ffffffc9;color:#4a456a;box-shadow:0 1px 8px #3c3b5b12;font-size:var(--hh-aux);font-weight:700;}
-  h1,h2,p {margin:0;} h1 {max-width:100%;font-size:clamp(28px,3.3vw,54px);line-height:1.12;letter-spacing:-.04em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:#202535;}
-  .progress-label {font-weight:650;color:#51596c;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .type-pill {display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:#ffffff25;color:#f6f4ff;border:1px solid #ffffff55;font-size:var(--hh-aux);font-weight:700;}
+  h1,h2,p {margin:0;} h1 {max-width:100%;font-size:clamp(28px,3.3vw,54px);line-height:1.12;letter-spacing:-.04em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:#fff;}
+  .progress-label {font-weight:650;color:#e1e5f0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   progress {width:min(360px,100%);height:7px;accent-color:var(--hh-accent);border-radius:8px;}
   .stage-actions {display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;}
   button {font:inherit;cursor:pointer;min-height:var(--hh-target,48px);color:#202535;}
   .stage-actions button,.welcome button {display:inline-flex;align-items:center;justify-content:center;gap:9px;border-radius:12px;padding:9px 18px;font-weight:750;}
-  .primary {background:var(--hh-action,#6253b8);border:1px solid transparent;color:white!important;box-shadow:0 6px 14px #584ba33b;}
+  .primary {background:#eee9ff;border:1px solid transparent;color:#242046!important;box-shadow:0 6px 14px #080e1f40;}
   .primary:disabled {opacity:.48;box-shadow:none;cursor:default;}
-  .secondary {background:#ffffffdb;border:1px solid #c9cad9;box-shadow:0 3px 12px #3f496317;}
+  .secondary {background:#ffffff21;border:1px solid #ffffff69;color:#fff;}
   button:focus-visible {outline:3px solid #5746b9;outline-offset:3px;}
   .recent-section {flex:none;min-height:0;}
   .section-heading {display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:16px;}
@@ -108,10 +110,10 @@
   .section-heading button {display:flex;align-items:center;gap:5px;min-height:44px;padding:0 6px;border:0;background:transparent;color:#51459b;font-weight:700;white-space:nowrap;}
   .recent-rail {height:184px;min-height:184px;}
   .recent-rail :global(.wh-virtual-list) {--wh-gap:12px;}
-  .recent-card {display:flex;flex-direction:column;align-items:stretch;gap:3px;width:100%;height:100%;padding:5px;border:2px solid transparent;border-radius:16px;background:transparent;text-align:left;}
+  .recent-card {display:flex;flex-direction:column;align-items:stretch;gap:3px;width:100%;height:100%;padding:5px;border:2px solid transparent;border-radius:16px;background:#fff;text-align:left;}
   .recent-card.selected {border-color:var(--hh-action,#6253b8);background:#ffffff;box-shadow:0 5px 14px #55478e26;}
   .thumb {height:112px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:11px;color:#8172c6;background:linear-gradient(140deg,#eae7fb,#f7f4fa 65%,#ebeef7);}
-  .thumb img {width:100%;height:100%;object-fit:contain;}
+  .thumb img {width:100%;height:100%;object-fit:cover;}
   .recent-title,.recent-card small {display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:4px;}
   .recent-title {font-size:var(--hh-aux);font-weight:750;} .recent-card small {font-size:12px;color:#687185;}
   .pinned-section {flex:none;padding-top:4px;} .pinned-section>div {display:flex;gap:10px;overflow:auto;margin-top:10px;}

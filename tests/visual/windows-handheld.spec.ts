@@ -121,6 +121,7 @@ test.describe("Windows handheld artwork states", () => {
     await page.screenshot({ path: testInfo.outputPath("gallery-art-states.png") });
     expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     await page.setViewportSize({ width: 640, height: 400 });
+    await expect(page.locator(".content-row").first()).toBeInViewport();
     await page.getByRole("button", { name: "搜索内容" }).click();
     await page.screenshot({ path: testInfo.outputPath("search-640.png") });
     await page.keyboard.press("Escape");
@@ -131,6 +132,7 @@ test.describe("Windows handheld artwork states", () => {
     await page.screenshot({ path: testInfo.outputPath("wheel-640.png") });
     await gamepad.press("b");
     await page.getByRole("button", { name: "快捷面板" }).click();
+    await expect(page.getByRole("button", { name: "切回原界面" })).toBeInViewport();
     await page.screenshot({ path: testInfo.outputPath("quick-640.png") });
     await page.keyboard.press("Escape");
     expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
@@ -181,6 +183,8 @@ test.describe("personal work album", () => {
     await expect(page.getByRole("region", { name: "专题 科幻故事收藏" })).toBeVisible();
     await page.setViewportSize({ width: 640, height: 400 });
     await expect(page.getByRole("button", { name: "添加作品" })).toBeVisible();
+    await expect(page.locator(".member-list .member").first()).toBeInViewport();
+    await expect(page.getByRole("button", { name: "继续使用" })).toBeInViewport();
     expect(await page.getByTestId("windows-handheld-shell").evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath("album-640.png") });
     await gamepad.connect();
