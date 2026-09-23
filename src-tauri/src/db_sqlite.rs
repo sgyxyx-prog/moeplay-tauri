@@ -885,15 +885,22 @@ impl SqliteDb {
     pub fn export_data(&self) -> Result<AppDatabase, String> {
         let games = self.list_games()?;
         let settings = self.get_settings()?;
+        let handheld_catalog = self
+            .get_setting(crate::handheld_catalog::CATALOG_KEY)?
+            .map(|value| crate::handheld_catalog::CatalogDocument::from_json(&value))
+            .transpose()?
+            .unwrap_or_default();
         Ok(AppDatabase {
             schema_version: self.schema_version()? as u32,
             games,
             settings,
+            handheld_catalog,
         })
     }
 
     /// 替换完整数据库（全量导入）。
     pub fn replace_data(&self, data: &AppDatabase) -> Result<(), String> {
+        data.handheld_catalog.validate()?;
         let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM games", [])
@@ -907,6 +914,14 @@ impl SqliteDb {
             "INSERT INTO settings(key,value_json) VALUES('app_settings',?1)
              ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json",
             params![settings_json],
+        )
+        .map_err(|e| e.to_string())?;
+        let catalog_json =
+            serde_json::to_string(&data.handheld_catalog).map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO settings(key,value_json) VALUES(?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json",
+            params![crate::handheld_catalog::CATALOG_KEY, catalog_json],
         )
         .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
@@ -2648,13 +2663,45 @@ mod tests {
         let db = SqliteDb::open_in_memory().unwrap();
         db.upsert_game(&mock("g1", "Game One")).unwrap();
         db.upsert_game(&mock("g2", "Game Two")).unwrap();
+        let mut catalog = crate::handheld_catalog::CatalogDocument::default();
+        catalog
+            .albums
+            .push(crate::handheld_catalog::CollectionAlbum {
+                id: "album-1".into(),
+                title: "作品志".into(),
+                description: "跨媒体".into(),
+                cover: None,
+                focal_x: 0.5,
+                focal_y: 0.5,
+                pinned: true,
+                members: vec![crate::handheld_catalog::AlbumMember {
+                    id: "game:g1".into(),
+                    content_id: Some("game:g1".into()),
+                    bangumi_id: Some(42),
+                    kind: "game".into(),
+                    title: "Game One".into(),
+                    cover: None,
+                    group: "本篇".into(),
+                    note: "喜欢".into(),
+                    relation: "改编".into(),
+                }],
+                ignored_subjects: vec![43],
+                updated_at: 123,
+            });
+        db.set_setting(
+            crate::handheld_catalog::CATALOG_KEY,
+            &serde_json::to_string(&catalog).unwrap(),
+        )
+        .unwrap();
         let exported = db.export_data().unwrap();
         assert_eq!(exported.games.len(), 2);
+        assert_eq!(exported.handheld_catalog, catalog);
 
         let db2 = SqliteDb::open_in_memory().unwrap();
         db2.replace_data(&exported).unwrap();
         assert_eq!(db2.game_count().unwrap(), 2);
         assert_eq!(db2.get_game("g1").unwrap().name, "Game One");
+        assert_eq!(db2.export_data().unwrap().handheld_catalog, catalog);
     }
 
     #[test]

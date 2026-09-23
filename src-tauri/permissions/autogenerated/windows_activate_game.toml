@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-windows-activate-game"
+description = "Enables the windows_activate_game command without any pre-configured scope."
+commands.allow = ["windows_activate_game"]
+
+[[permission]]
+identifier = "deny-windows-activate-game"
+description = "Denies the windows_activate_game command without any pre-configured scope."
+commands.deny = ["windows_activate_game"]

@@ -1,7 +1,7 @@
 export const CONTENT_MODES = ["visual", "index", "scene"] as const;
 export type ContentMode = (typeof CONTENT_MODES)[number];
 
-export const CONTENT_MODULES = ["games", "anime", "comics"] as const;
+export const CONTENT_MODULES = ["games", "anime", "comics", "novels"] as const;
 export type ContentModule = (typeof CONTENT_MODULES)[number];
 
 /** Matches the production wallpaper/shell surface vocabulary. */
@@ -36,6 +36,7 @@ export type MediaPresentationActionId =
   | "open"
   | "select"
   | "launch"
+  | "launch-again"
   | "toggle-favorite";
 
 export interface MediaPresentationAction {

@@ -28,6 +28,10 @@
   import type { VideoEnhancementMode, VideoEnhancementStatus } from "../../features/anime-player/localVideoEnhancement";
   import { orientationStore, platformStore } from "../../platform";
   import { attachGamepad } from "../switch/useGamepad.svelte";
+  import { displayProfile } from "../../features/windows-handheld/profile.svelte";
+  import { mediaSurface, createMediaPauseGuard } from "../../features/windows-handheld/mediaSession";
+  import VirtualList from "../../features/windows-handheld/VirtualList.svelte";
+  import { closeTopOverlay, routerStore } from "../../stores/router.svelte";
   import { idleTimer } from "../../actions/idleTimer";
   import {
     clearPlayerError,
@@ -115,6 +119,10 @@
   let mediaVolume = $state(1);
   let overlayEl = $state<HTMLDivElement | null>(null);
   let handheldPad: ReturnType<typeof attachGamepad> | null = null;
+  const pauseGuard = createMediaPauseGuard(() => videoEl, () => displayProfile.enabled, () => {
+    handleTimeUpdate();
+    controlsVisible.set(true);
+  });
   let useWebFallback = $state(false); // 用户选择「用网页播放」时加载站点自带播放器
   let webFrameLoaded = $state(false);
   let webFrameTimedOut = $state(false);
@@ -158,6 +166,7 @@
   let playbackRate = $state(animeStore.playbackRate);
   let showSpeedMenu = $state(false);
   let showDanmakuSettings = $state(false);
+  let showWindowsSettings = $state(false);
   const speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
 
   // 手势状态
@@ -175,6 +184,7 @@
   let showEpisodePanel = $state(false);
   let pickerRoadIdx = $state(0);
   const pickerEpisodes = $derived(roads[pickerRoadIdx]?.episodes ?? []);
+  const virtualEpisodes = $derived(pickerEpisodes.map((episode, index) => ({ episode, index, key: `${pickerRoadIdx}:${index}` })));
 
   // 控制栏隐藏统一由 `useIdleTimer` action + player store 驱动（FR-06）：
   // 移除散落的 playerChromeTimer / pointermove 监听；下拉菜单开合通过
@@ -183,6 +193,7 @@
     const base =
       (showSpeedMenu ? 1 : 0) +
       (showDanmakuSettings ? 1 : 0) +
+      (showWindowsSettings ? 1 : 0) +
       (showEpisodePanel ? 1 : 0) +
       (showCommentsPanel ? 1 : 0);
     openMenuCount.set(base + ($showSourceSuggest ? 1 : 0));
@@ -255,6 +266,7 @@
   }
 
   function handleMediaPlay() {
+    if (!pauseGuard.acceptPlay()) return;
     mediaPaused = false;
     scheduleTopNavHide();
   }
@@ -291,6 +303,7 @@
   let isPipActive = $state(false);
 
   onMount(() => {
+    const releasePauseGuard = pauseGuard.mount();
     document.addEventListener('fullscreenchange', onFullscreenChange);
     document.addEventListener('keydown', onKeyDown);
     window.addEventListener('pointermove', handleTopNavPointerMove, { passive: true });
@@ -328,6 +341,7 @@
         fullscreenGuardTimer = window.setInterval(() => { void restoreHostWindowFullscreen(); }, 320);
       } catch { /* 浏览器预览环境 */ }
     }
+    return releasePauseGuard;
   });
   onDestroy(() => {
     document.removeEventListener('fullscreenchange', onFullscreenChange);
@@ -522,6 +536,7 @@
   }
 
   function handlePlayerEscape() {
+    if (displayProfile.enabled) { closeTopOverlay(); return; }
     if (isFullscreen) toggleFullscreen();
     else void closePlayer();
   }
@@ -925,6 +940,7 @@
 
   function toggleMediaPlayback() {
     if (!videoEl) return;
+    pauseGuard.allowPlayback();
     if (videoEl.paused) void videoEl.play();
     else videoEl.pause();
   }
@@ -1188,6 +1204,7 @@
 
   // 键盘快捷键
   function onKeyDown(e: KeyboardEvent) {
+    if (displayProfile.enabled && routerStore.topOverlay?.id !== "windows-anime-player") return;
     // 输入框聚焦时不拦截
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
@@ -1206,7 +1223,7 @@
       case ' ':
       case 'k':
         e.preventDefault();
-        if (videoEl) videoEl.paused ? videoEl.play() : videoEl.pause();
+        toggleMediaPlayback();
         break;
       case 'ArrowLeft':
         e.preventDefault();
@@ -1319,6 +1336,7 @@
 
 <div
   class="player-overlay"
+  class:windows-player={displayProfile.enabled}
   class:fullscreen={isFullscreen}
   class:idle={$controlsVisible === false}
   role="dialog"
@@ -1328,6 +1346,15 @@
   tabindex="-1"
   bind:this={overlayEl}
   use:idleTimer={idleTimerOptions}
+  use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-anime-player", onBack: () => void closePlayer(), handlers: {
+    left: () => { if (videoEl) seekMedia(videoEl.currentTime - 10); },
+    right: () => { if (videoEl) seekMedia(videoEl.currentTime + 10); },
+    up: () => controlsVisible.set(true), down: () => controlsVisible.set(true),
+    launch: toggleMediaPlayback, favorite: toggleEpisodePanel,
+    activate: () => { showWindowsSettings = !showWindowsSettings; showEpisodePanel = false; controlsVisible.set(true); },
+    pageLeft: goPrev, pageRight: goNext,
+    start: () => controlsVisible.set(true),
+  } }}
   use:focusTrap={{
     initialFocus: '[data-player-close]',
     returnFocus: false,
@@ -1368,6 +1395,7 @@
       <button class="nav-btn fullscreen-toggle" type="button" onclick={toggleFullscreen} data-gamepad-activate={isFullscreen ? '退出全屏' : '进入全屏'} aria-label={isFullscreen ? '退出全屏' : '进入全屏'} title={isFullscreen ? '退出全屏' : '全屏'}>
         <Icon name={isFullscreen ? 'x' : 'maximize'} size={15} />
       </button>
+      {#if displayProfile.enabled}<button class="nav-btn" type="button" onclick={() => { showWindowsSettings = !showWindowsSettings; }} aria-label="播放设置"><Icon name="settings" size={16} /></button>{/if}
       {#if status === "found"}
         {#if isPipSupported}
           <button
@@ -1457,7 +1485,7 @@
             {playbackRate}x
           </button>
           {#if showSpeedMenu}
-            <div class="speed-menu">
+            <div class="speed-menu" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-anime-speed", menu: true, initialFocus: ".current", onBack: () => { showSpeedMenu = false; } }}>
               {#each speedOptions as speed}
                 <button
                   class="speed-option"
@@ -1472,7 +1500,7 @@
         </div>
         <!-- 弹幕设置面板 -->
         {#if showDanmakuSettings}
-          <div class="danmaku-settings-panel">
+          <div class="danmaku-settings-panel" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-anime-danmaku", menu: true, onBack: () => { showDanmakuSettings = false; } }}>
             <div class="settings-section">
               <span class="settings-label">显示区域</span>
               <div class="settings-row">
@@ -1620,6 +1648,7 @@
           autoplay
           ontimeupdate={handleTimeUpdate}
           onplay={handleMediaPlay}
+          onpointerdown={() => pauseGuard.allowPlayback()}
           onpause={handleMediaPause}
           ondurationchange={() => { if (videoEl) mediaDuration = Number.isFinite(videoEl.duration) ? videoEl.duration : 0; }}
           onvolumechange={() => { if (videoEl) mediaVolume = videoEl.volume; }}
@@ -1703,7 +1732,7 @@
 
     {#snippet panel()}
     {#if showCommentsPanel}
-      <section class="comments-panel" aria-labelledby="anime-comments-title">
+      <section class="comments-panel" aria-labelledby="anime-comments-title" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-anime-comments", menu: true, onBack: () => { showCommentsPanel = false; } }}>
         <div class="comments-header">
           <h3 class="comments-title" id="anime-comments-title">章节评论</h3>
           <button class="comments-close" type="button" aria-label="关闭章节评论" onclick={() => showCommentsPanel = false}>
@@ -1740,7 +1769,7 @@
     {/if}
 
     {#if showEpisodePanel}
-      <section class="episodes-panel" aria-labelledby="anime-episodes-title">
+      <section class="episodes-panel" aria-labelledby="anime-episodes-title" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-anime-episodes", menu: true, initialFocus: ".ep-panel-btn.current", onBack: () => { showEpisodePanel = false; } }}>
         <div class="comments-header">
           <h3 class="comments-title" id="anime-episodes-title">选集</h3>
           <button class="comments-close" type="button" aria-label="关闭选集面板" onclick={() => showEpisodePanel = false}>
@@ -1766,6 +1795,13 @@
           </div>
         {/if}
         <div class="episodes-panel-body">
+          {#if displayProfile.enabled}
+            <VirtualList items={virtualEpisodes} itemKey={item => item.key} estimateSize={64} columns={2} focusId={`${pickerRoadIdx}:${pickerRoadIdx === roadIdx ? epIdx : 0}`} overlayId="windows-anime-episodes" label="番剧选集">
+              {#snippet children(item)}
+                <button class="ep-panel-btn" class:current={pickerRoadIdx === roadIdx && item.index === epIdx} onclick={() => pickEpisode(pickerRoadIdx, item.index)} title={item.episode.name}>{item.episode.name || `第${item.index + 1}集`}</button>
+              {/snippet}
+            </VirtualList>
+          {:else}
           <div class="ep-panel-grid">
             {#each pickerEpisodes as ep, i (ep.url + i)}
               <button
@@ -1779,6 +1815,7 @@
               </button>
             {/each}
           </div>
+          {/if}
         </div>
       </section>
     {/if}
@@ -1799,7 +1836,20 @@
     {/snippet}
   </AnimePlaybackShell>
 
+  {#if displayProfile.enabled && showWindowsSettings}
+    <aside class="windows-playback-settings" aria-label="播放设置" use:mediaSurface={{ enabled: true, id: "windows-anime-settings", menu: true, onBack: () => { showWindowsSettings = false; } }}>
+      <button type="button" onclick={() => { showWindowsSettings = false; }}>返回播放</button>
+      <button type="button" onclick={toggleMediaPlayback}>{mediaPaused ? "播放" : "暂停"}</button>
+      <label>倍速<select aria-label="播放倍速" value={playbackRate} onchange={event => setPlaybackRate(Number(event.currentTarget.value))}>{#each speedOptions as speed}<option value={speed}>{speed}x</option>{/each}</select></label>
+      <label>音量<input aria-label="播放音量" type="range" min="0" max="1" step="0.1" value={mediaVolume} oninput={event => setMediaVolume(Number(event.currentTarget.value))} /></label>
+      <button type="button" onclick={() => { animeStore.autoNext = !animeStore.autoNext; }}>自动下一集：{autoNext ? "开" : "关"}</button>
+      <button type="button" onclick={() => { showWindowsSettings = false; showDanmakuSettings = true; }}>弹幕设置</button>
+      <button type="button" onclick={() => { showWindowsSettings = false; toggleEpisodePanel(); }}>选集与线路</button>
+    </aside>
+  {/if}
+
   {#if $playerError && !$showSourceSuggest && status !== 'extracting' && failoverStatus !== 'trying'}
+    <div class="media-dialog-surface" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-anime-error", menu: true, initialFocus: ".player-error-overlay__btn--primary", onBack: clearPlayerError }}>
     <ErrorOverlay
       error={$playerError}
       retryCount={$retryCount}
@@ -1813,9 +1863,11 @@
       onCopyLog={copyPlayerLog}
       onClose={() => clearPlayerError()}
     />
+    </div>
   {/if}
 
   {#if $showSourceSuggest}
+    <div class="media-dialog-surface" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-anime-source", menu: true, onBack: () => { showSourceSuggest.set(false); clearPlayerError(); } }}>
     <SourceSuggestSheet
       contentType="anime"
       contentId={animeStore.detailName}
@@ -1828,10 +1880,19 @@
         clearPlayerError();
       }}
     />
+    </div>
   {/if}
 </div>
 
 <style>
+  @media (max-width: 700px) {
+    .windows-player .episodes-panel, .windows-player .comments-panel, .windows-player .windows-playback-settings { inset: 0; width: 100%; max-width: none; }
+    .windows-player .danmaku-settings-panel { position: fixed; inset: 0; width: 100%; max-height: none; overflow-y: auto; }
+  }
+  .windows-playback-settings { position: absolute; z-index: 75; top: 70px; right: 20px; bottom: 20px; width: min(380px, 42vw); display: flex; flex-direction: column; gap: 12px; padding: 20px; background: #121722; overflow: auto; border: 1px solid #ffffff38; }
+  .windows-playback-settings :is(button,select) { min-height: 48px; color: inherit; background: #202938; border: 1px solid #ffffff38; font-size: 16px; }
+  .windows-playback-settings label { display: grid; gap: 8px; }
+  .media-dialog-surface { display: contents; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   .player-state--async { width: min(36rem, calc(100% - 2rem)); }
   .player-state--async :global(.v2-async-state) { width: 100%; }
@@ -2252,7 +2313,7 @@
     border-color: var(--accent); color: var(--accent);
   }
   .episodes-panel-body {
-    flex: 1; overflow-y: auto; padding: 10px 14px 14px;
+    flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px 14px;
   }
   .ep-panel-grid {
     display: grid;

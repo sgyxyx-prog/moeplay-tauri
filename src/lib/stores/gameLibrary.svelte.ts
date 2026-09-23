@@ -367,6 +367,14 @@ export const libraryStore = {
     }
   },
 
+  async launchTracked(id: string) {
+    try { return await launchGame(id); }
+    catch (error) {
+      _loadError = userFacingErrorMessage(error);
+      throw error;
+    }
+  },
+
   async launchJP(id: string) {
     try {
       await launchGame(id, true);
