@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{plugin::TauriPlugin, Runtime};
 
 #[cfg(target_os = "android")]
-use tauri::Manager;
-#[cfg(target_os = "android")]
 use tauri::plugin::PluginHandle;
+#[cfg(target_os = "android")]
+use tauri::Manager;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

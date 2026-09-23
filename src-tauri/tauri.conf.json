@@ -47,7 +47,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "resources/rules/**/*.json"
+      "resources/rules/**/*.json",
+      "resources/HANDHELD_THIRD_PARTY_NOTICES.txt"
     ],
     "windows": {
       "wix": {

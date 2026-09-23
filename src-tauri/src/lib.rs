@@ -48,6 +48,7 @@ pub mod task_queue;
 pub mod thumbnail;
 pub mod translator;
 pub mod utils;
+pub mod windows_handheld;
 
 pub mod anime_download;
 pub mod extension_index;
@@ -258,6 +259,17 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| {
+            #[cfg(windows)]
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                windows_handheld::window_destroyed(window.label());
+            }
+            #[cfg(windows)]
+            if matches!(
+                event,
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. }
+            ) {
+                windows_handheld::window_metrics_changed(window);
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let keep_in_tray = window
@@ -295,10 +307,16 @@ pub fn run() {
     let builder = builder
         .manage(LocaleEmulatorManager::new())
         .manage(ProcessMonitor::new())
+        .manage(windows_handheld::WindowsHandheldState::default())
         .manage(ImportWatcher::new());
 
     builder
         .invoke_handler(tauri::generate_handler![
+            windows_handheld::windows_keyboard_show,
+            windows_handheld::windows_keyboard_hide,
+            windows_handheld::windows_keyboard_status,
+            windows_handheld::windows_keyboard_settings,
+            windows_handheld::windows_activate_game,
             commands::get_platform_capabilities,
             commands::merge_sync_envelopes,
             commands::get_sync_snapshot_path,

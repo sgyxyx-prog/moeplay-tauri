@@ -19,6 +19,11 @@ const RULES_PACKAGE_PUBLISHED_AT: i64 = 1785830400;
 // 文件都做了**追加式**改动：build.rs 只向数组追加 9 个名字，capabilities 只
 // 追加 9 条 `allow-rules-*` 权限，未改动任何既有条目。
 const COMMANDS: &[&str] = &[
+    "windows_keyboard_show",
+    "windows_keyboard_hide",
+    "windows_keyboard_status",
+    "windows_keyboard_settings",
+    "windows_activate_game",
     "add_game_alias",
     "add_game_backup",
     "add_game_by_dialog",

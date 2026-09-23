@@ -94,6 +94,13 @@ describe("gamepadLayout 逐手柄覆盖（UU远程 等串流虚拟手柄场景�
     expect(resolveGamepadLayout(UU_PAD_ID, "auto", 1)).toBe("xbox");
   });
 
+  it("keeps PlayStation device overrides after reading persisted configuration", () => {
+    writeDeviceLayoutPreference(UU_PAD_ID, "playstation", 0);
+    expect(readDeviceLayoutFor(UU_PAD_ID, 0)).toBe("playstation");
+    expect(resolveGamepadLayout(UU_PAD_ID, "xbox", 0)).toBe("playstation");
+    expect(resolveConnectedPadLayouts([{ id: UU_PAD_ID, index: 0, connected: true }])[0].layout).toBe("playstation");
+  });
+
   it("无槽位覆盖时退回 id 级覆盖，再退回全局偏好", () => {
     writeDeviceLayoutPreference(UU_PAD_ID, "nintendo");
     expect(resolveGamepadLayout(UU_PAD_ID, "auto", 0)).toBe("nintendo");

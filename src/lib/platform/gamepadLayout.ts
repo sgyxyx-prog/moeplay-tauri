@@ -50,7 +50,7 @@ export function readDeviceLayoutMap(): Record<string, GamepadLayout> {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
     const out: Record<string, GamepadLayout> = {};
     for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (value === "xbox" || value === "nintendo") out[key] = value;
+      if (value === "xbox" || value === "nintendo" || value === "playstation") out[key] = value;
     }
     return out;
   } catch {

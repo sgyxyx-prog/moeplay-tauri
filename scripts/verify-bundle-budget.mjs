@@ -4,12 +4,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_BUDGET = Object.freeze({
-  // v0.22.0 re-baseline: 掌机 XMB 共享壳层、双层肩键导航与媒体入口整合完成。
-  // KineticScene、播放器和媒体页仍按需拆分；单 chunk 限制继续独立约束。
-  totalJavaScriptBytes: 3_100_000,
+  // v0.24.0 Windows 掌机预览: 直接引入 TanStack Virtual，并为掌机壳、
+  // 章节面板和媒体恢复新增按需块。origin/master 的同环境基线为
+  // 3,078,239 B / 97,474 B Comic；保持约 22 KB / 5 KB 的缓冲，避免
+  // 未来把整个预览功能无界地纳入包体。
+  totalJavaScriptBytes: 3_200_000,
   largestChunkBytes: 1_100_000,
   animeChunkBytes: 700_000,
-  comicChunkBytes: 100_000,
+  comicChunkBytes: 110_000,
 });
 
 export function inspectBundle(directory, budget = DEFAULT_BUDGET) {

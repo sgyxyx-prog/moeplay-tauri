@@ -32,6 +32,8 @@
   import { kineticStageStore } from "../features/kinetic";
   import { applyStartupWindowMode } from "../utils/startup-window-mode";
   import HandheldSettingsControlCenter from "./settings/HandheldSettingsControlCenter.svelte";
+  import { displayProfile } from "../features/windows-handheld/profile.svelte";
+  import { navigateTo } from "../stores/router.svelte";
 
   let showUpdateDialog = $state(false);
   const appVersion = APP_VERSION;
@@ -484,6 +486,10 @@
     {#if platformStore.isAndroid}
       <HandheldSettingsControlCenter />
     {:else}
+    <div class="windows-handheld-entry">
+      <div><strong>Windows 掌机体验 · 预览</strong><p>16:10 多分辨率、手柄浏览与系统中文触摸输入。开启后会记住选择。</p></div>
+      <button type="button" onclick={() => { displayProfile.update({ mode: displayProfile.enabled ? "desktop" : "handheld" }); uiStore.setBigPicture(false); navigateTo("home", { focus: "none" }); }}>{displayProfile.enabled ? "切回原界面" : "开启新掌机模式"}</button>
+    </div>
     <div class="stg-workspace">
       <aside class="stg-index" aria-label={i18n.t("settings.title")}>
         <span>SETTINGS / INDEX</span>
@@ -884,6 +890,9 @@
 {/if}
 
 <style>
+  .windows-handheld-entry { display:flex;align-items:center;gap:20px;justify-content:space-between;padding:20px;border:1px solid var(--border,#7774);border-radius:12px;margin:0 0 20px;flex-wrap:wrap; }
+  .windows-handheld-entry p {font-size:14px;margin:6px 0;color:var(--text-secondary);}
+  .windows-handheld-entry button {min-height:48px;padding:12px 20px;background:var(--accent,#b4a4ee);color:var(--text-primary);border:0;border-radius:8px;cursor:pointer;font:inherit;}
   :global(.settings-v2-shell) { height: 100%; }
   :global(.settings-v2-shell .v2-page-shell__inner) { height: 100%; padding: 0; }
 

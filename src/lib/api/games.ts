@@ -554,13 +554,15 @@ export async function configureCloudSync(
 // ===== 启动 =====
 
 
+export interface GameLaunchResult { session_id: string; pid: number | null; locale_method?: string; }
+
 export async function launchGame(
   id: string,
   forceLocaleJp?: boolean
-): Promise<void> {
+): Promise<GameLaunchResult> {
   const args: { id: string; forceLocaleJp?: boolean } = { id };
   if (forceLocaleJp !== undefined) args.forceLocaleJp = forceLocaleJp;
-  return invokeCmd("launch_game", args);
+  return invokeCmd<GameLaunchResult>("launch_game", args);
 }
 
 // ===== 刮削 =====
