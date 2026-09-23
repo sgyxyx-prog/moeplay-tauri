@@ -42,6 +42,7 @@ pub mod steam_openid;
 pub mod steam_openid_mobile;
 #[cfg(mobile)]
 pub use steam_openid_mobile as steam_openid;
+pub mod handheld_catalog;
 pub mod sync;
 pub mod sync_envelope;
 pub mod task_queue;
@@ -317,6 +318,10 @@ pub fn run() {
             windows_handheld::windows_keyboard_status,
             windows_handheld::windows_keyboard_settings,
             windows_handheld::windows_activate_game,
+            handheld_catalog::handheld_catalog_get,
+            handheld_catalog::handheld_catalog_save,
+            handheld_catalog::handheld_bangumi_relations,
+            handheld_catalog::handheld_bangumi_search,
             commands::get_platform_capabilities,
             commands::merge_sync_envelopes,
             commands::get_sync_snapshot_path,

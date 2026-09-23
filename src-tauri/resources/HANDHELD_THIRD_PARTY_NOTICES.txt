@@ -10,6 +10,12 @@ Pegasus Frontend: https://github.com/mmatyas/pegasus-frontend
 Jellyfin Web: https://github.com/jellyfin/jellyfin-web
 Animeko: https://github.com/open-ani/animeko
 Mihon: https://github.com/mihonapp/mihon
+Aniki ReMake: https://github.com/Mike-Aniki/Aniki-ReMake
+Seelen UI: https://github.com/eythaann/Seelen-UI
+RomM: https://github.com/rommapp/romm
+Kando: https://github.com/kando-menu/kando
+Flow Launcher: https://github.com/Flow-Launcher/Flow.Launcher
+Bangumi API schema: https://github.com/bangumi/server/blob/master/openapi/v0.yaml
 MIT License
 
 Copyright (c) 2021-present Tanner Linsley

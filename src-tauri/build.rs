@@ -20,6 +20,10 @@ const RULES_PACKAGE_PUBLISHED_AT: i64 = 1785830400;
 // 追加 9 条 `allow-rules-*` 权限，未改动任何既有条目。
 const COMMANDS: &[&str] = &[
     "windows_keyboard_show",
+    "handheld_catalog_get",
+    "handheld_catalog_save",
+    "handheld_bangumi_relations",
+    "handheld_bangumi_search",
     "windows_keyboard_hide",
     "windows_keyboard_status",
     "windows_keyboard_settings",

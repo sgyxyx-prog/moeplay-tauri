@@ -9,8 +9,11 @@ export interface SessionSnapshot {
   scrollOffset: number;
   focusKey: string | null;
   query: string;
+  albumId: string | null;
+  albumMemberId: string | null;
+  libraryView: "all" | "albums";
 }
-function empty(tab: HandheldTab): SessionSnapshot { return { tab, kind: "all", filter: "all", sort: "recent", selectedId: null, scrollOffset: 0, focusKey: null, query: "" }; }
+function empty(tab: HandheldTab): SessionSnapshot { return { tab, kind: "all", filter: "all", sort: "recent", selectedId: null, scrollOffset: 0, focusKey: null, query: "", albumId: null, albumMemberId: null, libraryView: "albums" }; }
 let active = $state<HandheldTab>("continue");
 let snapshots = $state<Record<HandheldTab, SessionSnapshot>>({ continue: empty("continue"), library: empty("library"), discover: { ...empty("discover"), kind: "anime" }, mine: empty("mine") });
 export const handheldSession = {

@@ -1041,6 +1041,8 @@ pub struct AppDatabase {
     pub schema_version: u32,
     pub games: Vec<Game>,
     pub settings: Settings,
+    #[serde(default)]
+    pub handheld_catalog: crate::handheld_catalog::CatalogDocument,
 }
 
 impl Default for AppDatabase {
@@ -1049,6 +1051,7 @@ impl Default for AppDatabase {
             schema_version: crate::migration::CURRENT_SCHEMA_VERSION,
             games: Vec::new(),
             settings: Settings::default(),
+            handheld_catalog: crate::handheld_catalog::CatalogDocument::default(),
         }
     }
 }
