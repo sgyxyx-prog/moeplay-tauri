@@ -469,6 +469,12 @@
     await updateAppearance({ theme_pack, fixed_wallpaper_id: undefined });
     uiStore.notify("主题包已切换", "success");
   }
+
+  function switchWindowsHandheldMode() {
+    displayProfile.update({ mode: displayProfile.enabled ? "desktop" : "handheld" });
+    uiStore.setBigPicture(false);
+    navigateTo("home", { focus: "none" });
+  }
 </script>
 
 <PageShell as="div" width="full" scrollable={false} class="settings-v2-shell" labelledBy="settings-page-title" ariaLabel={i18n.t("settings.title")}>
@@ -486,10 +492,6 @@
     {#if platformStore.isAndroid}
       <HandheldSettingsControlCenter />
     {:else}
-    <div class="windows-handheld-entry">
-      <div><strong>Windows 掌机体验 · 预览</strong><p>16:10 多分辨率、手柄浏览与系统中文触摸输入。开启后会记住选择。</p></div>
-      <button type="button" onclick={() => { displayProfile.update({ mode: displayProfile.enabled ? "desktop" : "handheld" }); uiStore.setBigPicture(false); navigateTo("home", { focus: "none" }); }}>{displayProfile.enabled ? "切回原界面" : "开启新掌机模式"}</button>
-    </div>
     <div class="stg-workspace">
       <aside class="stg-index" aria-label={i18n.t("settings.title")}>
         <span>SETTINGS / INDEX</span>
@@ -580,6 +582,16 @@
                 <span class="mode-label">{mode.label}</span>
               </Card>
             {/each}
+          </div>
+
+          <div class="s-row windows-handheld-row">
+            <div class="s-info">
+              <span class="s-label">Windows 掌机体验 · 预览</span>
+              <span class="s-desc">16:10 多分辨率、手柄浏览与系统中文触摸输入。开启后会记住选择。</span>
+            </div>
+            <button class="s-link-btn windows-handheld-toggle" type="button" aria-pressed={displayProfile.enabled} onclick={switchWindowsHandheldMode}>
+              {displayProfile.enabled ? "切回原界面" : "开启新掌机模式"}
+            </button>
           </div>
 
           <div class="s-divider"></div>
@@ -890,9 +902,8 @@
 {/if}
 
 <style>
-  .windows-handheld-entry { display:flex;align-items:center;gap:20px;justify-content:space-between;padding:20px;border:1px solid var(--border,#7774);border-radius:12px;margin:0 0 20px;flex-wrap:wrap; }
-  .windows-handheld-entry p {font-size:14px;margin:6px 0;color:var(--text-secondary);}
-  .windows-handheld-entry button {min-height:48px;padding:12px 20px;background:var(--accent,#b4a4ee);color:var(--text-primary);border:0;border-radius:8px;cursor:pointer;font:inherit;}
+  .windows-handheld-row { gap: 16px; flex-wrap: wrap; }
+  .windows-handheld-toggle { min-height: 44px; padding: 8px 16px; white-space: nowrap; }
   :global(.settings-v2-shell) { height: 100%; }
   :global(.settings-v2-shell .v2-page-shell__inner) { height: 100%; padding: 0; }
 

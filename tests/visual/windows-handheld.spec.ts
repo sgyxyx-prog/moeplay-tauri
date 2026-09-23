@@ -14,6 +14,20 @@ const state = {
   },
 };
 
+test.describe("Windows handheld settings entry", () => {
+  test.use({ appState: { ...DEFAULT_APP_STATE, settings: { ...DEFAULT_APP_STATE.settings, startup_mode: "windowed" } }, viewport: { width: 1280, height: 800 } });
+  test("enables the persistent shell from the existing appearance settings", async ({ appPage: page }) => {
+    await expect(page.getByTestId("windows-handheld-shell")).toHaveCount(0);
+    await page.getByRole("banner").getByRole("button", { name: "打开设置" }).click();
+    const entry = page.getByRole("button", { name: "开启新掌机模式" });
+    await entry.scrollIntoViewIfNeeded();
+    await expect(entry).toBeInViewport();
+    await entry.click();
+    await expect(page.getByTestId("windows-handheld-shell")).toBeVisible();
+    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).mode, profileKey)).toBe("handheld");
+  });
+});
+
 test.describe("Windows handheld interaction", () => {
   test.use({ appState: state, viewport: { width: 1280, height: 800 } });
   test("preserves selection across resolution changes, panels and inner routes", async ({ appPage: page, gamepad }, testInfo) => {
