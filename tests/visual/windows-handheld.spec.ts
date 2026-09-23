@@ -14,6 +14,15 @@ const state = {
   },
 };
 
+const sampleArt = (portrait: boolean, label: string, first: string, second: string) =>
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${portrait ? "600 900" : "1200 650"}"><defs><linearGradient id="a" x2="1" y2="1"><stop stop-color="${first}"/><stop offset="1" stop-color="${second}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#a)"/><circle cx="67%" cy="38%" r="28%" fill="#ffffff44"/><path d="M0 530 Q380 220 700 530 T1200 470 V900 H0" fill="#1c254688"/><text x="8%" y="68%" font-family="sans-serif" font-weight="bold" font-size="${portrait ? 58 : 92}" fill="white">${label}</text></svg>`)}`;
+const visualGames = [
+  { ...MOCK_GAMES[0], id: "wide-art", name: "星海回声", metadata: { ...MOCK_GAMES[0].metadata, cover: "https://art.moeplay.test/portrait.svg", background: "https://art.moeplay.test/wide.svg" }, play_tracker: { ...MOCK_GAMES[0].play_tracker, last_played: "2026-09-23T12:00:00.000Z" } },
+  { ...MOCK_GAMES[1], id: "portrait-art", name: "只有竖版封面的作品", metadata: { ...MOCK_GAMES[1].metadata, cover: "https://art.moeplay.test/portrait-pink.svg" }, play_tracker: { ...MOCK_GAMES[1].play_tracker, last_played: "2026-09-22T12:00:00.000Z" } },
+  { ...MOCK_GAMES[0], id: "failed-art", name: "加载失败后依然清楚可读的超长作品标题：关于那场旅行与记忆的另一种结局", metadata: { ...MOCK_GAMES[0].metadata, cover: "data:image/png;base64,invalid", background: "data:image/png;base64,invalid" }, play_tracker: { ...MOCK_GAMES[0].play_tracker, last_played: "2026-09-21T12:00:00.000Z" } },
+  { ...MOCK_GAMES[1], id: "no-art", name: "没有封面的故事", metadata: { ...MOCK_GAMES[1].metadata }, play_tracker: { ...MOCK_GAMES[1].play_tracker, last_played: "2026-09-20T12:00:00.000Z" } },
+];
+
 test.describe("Windows handheld settings entry", () => {
   test.use({ appState: { ...DEFAULT_APP_STATE, settings: { ...DEFAULT_APP_STATE.settings, startup_mode: "windowed" } }, viewport: { width: 1280, height: 800 } });
   test("enables the persistent shell from the existing appearance settings", async ({ appPage: page }) => {
@@ -52,7 +61,7 @@ test.describe("Windows handheld interaction", () => {
       await page.clock.runFor(100);
       await expect(page.locator(".content-row.selected")).toHaveAttribute("data-focus-key", id!);
     }
-    await page.getByRole("button", { name: "作品操作", exact: true }).click();
+    await gamepad.press("x");
     await page.getByRole("button", { name: "章节与详情" }).click();
     await expect(page.getByRole("button", { name: "← 返回藏馆" })).toBeVisible();
     await page.getByRole("button", { name: "← 返回藏馆" }).click();
@@ -82,25 +91,77 @@ test.describe("Windows handheld interaction", () => {
   });
 });
 
+test.describe("Windows handheld artwork states", () => {
+  test.use({ appState: { ...state, games: visualGames }, viewport: { width: 1280, height: 800 } });
+  test("keeps hero, portrait, broken and missing artwork legible", async ({ appPage: page, gamepad }, testInfo) => {
+    await page.route("https://art.moeplay.test/**", async route => {
+      const name = route.request().url().split("/").at(-1);
+      const svg = name === "wide.svg" ? sampleArt(false, "星海回声", "#4c68aa", "#ab80c7")
+        : name === "portrait-pink.svg" ? sampleArt(true, "竖版封面", "#c870a3", "#e8b392")
+        : sampleArt(true, "星海", "#5d70b9", "#a07dd6");
+      await route.fulfill({ contentType: "image/svg+xml", body: decodeURIComponent(svg.slice("data:image/svg+xml,".length)) });
+    });
+    await page.reload();
+    const shell = page.getByTestId("windows-handheld-shell");
+    await expect(page.locator(".stage-art")).toBeVisible();
+    await expect.poll(() => page.locator(".stage-art").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("home-wide-art.png") });
+    await page.locator(".recent-card").first().focus();
+    await gamepad.connect();
+    await gamepad.press("dpadRight");
+    await expect(page.locator(".recent-card").nth(1)).toHaveClass(/selected/);
+    await page.getByRole("button", { name: /只有竖版封面的作品/ }).first().click();
+    await expect(page.locator(".stage-art:not(.wide)")).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("home-portrait-art.png") });
+    await page.getByRole("button", { name: /加载失败后依然清楚可读/ }).first().click();
+    await expect(page.locator(".stage-pattern")).toBeVisible();
+    await expect(page.locator(".stage-copy h1")).toContainText("加载失败后依然清楚可读");
+    await page.screenshot({ path: testInfo.outputPath("home-failed-art.png") });
+    await page.getByRole("button", { name: "藏馆", exact: true }).click();
+    await page.screenshot({ path: testInfo.outputPath("gallery-art-states.png") });
+    expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    await page.setViewportSize({ width: 640, height: 400 });
+    await page.getByRole("button", { name: "搜索内容" }).click();
+    await page.screenshot({ path: testInfo.outputPath("search-640.png") });
+    await page.keyboard.press("Escape");
+    await page.locator(".content-row").first().click();
+    await gamepad.connect();
+    await gamepad.press("x");
+    await expect(page.locator(".wheel-list")).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("wheel-640.png") });
+    await gamepad.press("b");
+    await page.getByRole("button", { name: "快捷面板" }).click();
+    await page.screenshot({ path: testInfo.outputPath("quick-640.png") });
+    await page.keyboard.press("Escape");
+    expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  });
+});
+
 test.describe("personal work album", () => {
   test.use({ appState: state, viewport: { width: 1280, height: 800 } });
   test("creates, arranges and restores a playable album", async ({ appPage: page, gamepad }, testInfo) => {
     await page.getByRole("button", { name: "藏馆", exact: true }).click();
+    await page.getByRole("button", { name: "我的专题 · 0" }).click();
     await page.getByPlaceholder("给新专题起个名字").fill("科幻故事收藏");
     await page.getByRole("button", { name: "创建专题" }).click();
     await expect(page.getByRole("region", { name: "专题 科幻故事收藏" })).toBeVisible();
-    await page.getByRole("button", { name: "＋ 添加本机作品" }).click();
+    await page.getByRole("button", { name: "编辑专题" }).click();
+    await page.screenshot({ path: testInfo.outputPath("album-edit-1280.png") });
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "添加作品" }).click();
     await page.getByRole("button", { name: /星海回声/ }).last().click();
     await expect(page.locator(".member-list .member")).toHaveCount(1);
-    await page.getByRole("button", { name: "＋ 添加本机作品" }).click();
+    await page.getByRole("button", { name: "添加作品" }).click();
     await page.getByRole("button", { name: /夏日列车/ }).last().click();
     await expect(page.locator(".member-list .member")).toHaveCount(2);
     await page.locator(".member-list .member").nth(1).dragTo(page.locator(".member-list .member").nth(0));
     await expect(page.locator(".member-list .member").first()).toContainText("夏日列车");
     await page.locator(".member-list .member").last().click();
+    await page.getByRole("button", { name: "编辑这项" }).click();
     await page.getByRole("textbox", { name: "我的短评" }).fill("特别喜欢叙事节奏");
     await page.getByRole("textbox", { name: "我的短评" }).blur();
-    await expect(page.locator(".own-note")).toContainText("特别喜欢叙事节奏");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".member-note")).toContainText("特别喜欢叙事节奏");
     await gamepad.connect();
     await gamepad.press("x");
     await expect(page.getByRole("dialog")).toBeVisible();
@@ -108,6 +169,7 @@ test.describe("personal work album", () => {
     await page.screenshot({ path: testInfo.outputPath("album-1280.png") });
     await page.reload();
     await page.getByRole("button", { name: "藏馆", exact: true }).click();
+    await page.getByRole("button", { name: "我的专题 · 1" }).click();
     await page.getByRole("button", { name: /科幻故事收藏/ }).click();
     await expect(page.getByRole("region", { name: "专题 科幻故事收藏" })).toBeVisible();
     await expect(page.locator(".member-list .member").last()).toContainText("星海回声");
@@ -118,7 +180,7 @@ test.describe("personal work album", () => {
     await page.locator(".local-results button").first().click();
     await expect(page.getByRole("region", { name: "专题 科幻故事收藏" })).toBeVisible();
     await page.setViewportSize({ width: 640, height: 400 });
-    await expect(page.getByRole("button", { name: "＋ 添加本机作品" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "添加作品" })).toBeVisible();
     expect(await page.getByTestId("windows-handheld-shell").evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath("album-640.png") });
     await gamepad.connect();
@@ -134,19 +196,24 @@ test.describe("Bangumi album relations", () => {
   } }, viewport: { width: 1280, height: 800 } });
   test("requires explicit binding and keeps book recommendations as metadata", async ({ appPage: page }) => {
     await page.getByRole("button", { name: "藏馆", exact: true }).click();
+    await page.getByRole("button", { name: "我的专题 · 0" }).click();
     await page.getByPlaceholder("给新专题起个名字").fill("星海系列");
     await page.getByRole("button", { name: "创建专题" }).click();
-    await page.getByRole("button", { name: "＋ 添加本机作品" }).click();
+    await page.getByRole("button", { name: "添加作品" }).click();
     await page.getByRole("button", { name: /星海回声/ }).last().click();
-    await page.getByPlaceholder("搜索 Bangumi 标题").fill("星海回声");
+    await page.locator(".member-list .member").first().click();
+    await page.getByRole("button", { name: "查看关联" }).click();
+    await page.getByPlaceholder("搜索作品标题").fill("星海回声");
     await page.getByRole("button", { name: "搜索条目" }).click();
     await page.getByRole("button", { name: /Bangumi #100/ }).click();
     await expect(page.getByText("星海回声：前传")).toBeVisible();
     await page.getByRole("button", { name: "加入专题" }).click();
     await expect(page.locator(".member-list .member")).toHaveCount(2);
+    await page.keyboard.press("Escape");
     await page.locator(".member-list .member").last().click();
-    await expect(page.getByText("仅资料 · 需要关联本机内容")).toBeVisible();
+    await expect(page.getByText("仅资料 · 尚未绑定可用内容")).toBeVisible();
     await expect(page.getByRole("button", { name: "查找来源" })).toBeVisible();
+    await page.getByRole("button", { name: "查看关联" }).click();
     await page.getByRole("button", { name: "关联本机内容" }).click();
     await page.getByRole("textbox", { name: "搜索本机内容进行关联" }).fill("");
     await page.locator(".link-results button").first().click();

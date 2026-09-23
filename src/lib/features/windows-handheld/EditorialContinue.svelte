@@ -1,55 +1,125 @@
 <script lang="ts">
-  import AdaptiveChromaStage from "../media-workspace/chroma/AdaptiveChromaStage.svelte";
+  import Icon from "../../components/Icon.svelte";
   import VirtualList from "./VirtualList.svelte";
   import { catalogStore } from "./catalog.svelte";
   import { displayProfile } from "./profile.svelte";
   import type { HandheldContentItem } from "./types";
 
-  let { items, selected, onselect, onopen, onmore, onalbum, onlibrary, onsearch }:
-    { items: HandheldContentItem[]; selected: HandheldContentItem | null;
-      onselect: (item: HandheldContentItem) => void; onopen: (item: HandheldContentItem) => void;
-      onmore: () => void; onalbum: (id: string) => void; onlibrary: () => void; onsearch: () => void } = $props();
+  let { items, selected, recentOffset, onrecentScroll, onselect, onopen, onmore, onalbum, onlibrary, onsearch, onimport }:
+    { items: HandheldContentItem[]; selected: HandheldContentItem | null; recentOffset: number;
+      onrecentScroll: (offset: number) => void; onselect: (item: HandheldContentItem) => void;
+      onopen: (item: HandheldContentItem) => void; onmore: () => void;
+      onalbum: (id: string) => void; onlibrary: () => void; onsearch: () => void; onimport: () => void } = $props();
   const kinds = { game: "游戏", anime: "番剧", comic: "漫画", novel: "小说" };
+  const kindIcon = { game: "gamepad", anime: "film", comic: "image", novel: "book" };
   const recent = $derived(items.slice(0, 24));
   const pinned = $derived(catalogStore.albums.filter(album => album.pinned).slice(0, 4));
+  let failedImages = $state<string[]>([]);
+  const coverSrc = $derived(selected?.cover?.src && !failedImages.includes(selected.cover.src) ? selected.cover.src : null);
+  const backdropSrc = $derived(selected?.hero?.src && !failedImages.includes(selected.hero.src)
+    ? selected.hero.src : coverSrc);
+  const wideArt = $derived(Boolean(selected?.hero?.src && selected.hero.src !== selected.cover?.src && backdropSrc === selected.hero.src));
+  function imageFailed(src: string) { if (!failedImages.includes(src)) failedImages = [...failedImages, src]; }
 </script>
 
 {#if selected}
-  <div class="editorial-home">
-    <div class="issue-line"><span>MOEPLAY / OPEN ISSUE</span><span>接着上次 · {items.length} 项进度</span></div>
-    <div class="hero-frame"><AdaptiveChromaStage src={selected.hero?.src ?? selected.cover?.src} strength={displayProfile.profile.lightEffects ? "off" : "balanced"} class="editorial-stage">
-      <div class="hero-wash"></div><div class="portrait">{#if selected.cover?.src}<img src={selected.cover.src} alt="" decoding="async" />{:else}<span>{kinds[selected.kind]}</span>{/if}</div>
-      <div class="hero-copy"><span class="tag">{kinds[selected.kind]} / CONTINUE</span><h1>{selected.title}</h1><p class="chapter">{selected.progressLabel}</p>
+  <div class="immersive-home">
+    <section class="feature-stage" aria-label="继续当前作品">
+      {#if backdropSrc}
+        <img class:wide={wideArt} class="stage-art" src={backdropSrc} alt="" decoding="async"
+          onerror={() => imageFailed(backdropSrc)} />
+      {:else}
+        <div class="stage-pattern" aria-hidden="true"><Icon name={kindIcon[selected.kind]} size={140} stroke={0.7} /></div>
+      {/if}
+      <div class="stage-copy">
+        <span class="type-pill"><Icon name={kindIcon[selected.kind]} size={17} />{kinds[selected.kind]} · 接着上次</span>
+        <h1>{selected.title}</h1>
+        <p class="progress-label">{selected.progressLabel}</p>
         {#if selected.progress !== null}<progress value={selected.progress} max="1" aria-label="内容进度"></progress>{/if}
-        <div class="hero-actions"><button class="hero-primary" disabled={!selected.actions.some(action => (action.id === "open" || action.id === "launch") && action.enabled)} onclick={() => onopen(selected)}>{selected.primaryLabel} <span aria-hidden="true">↗</span></button><button onclick={onmore}>操作与详情</button></div>
-      </div><span class="hero-index">01</span>
-    </AdaptiveChromaStage></div>
-    <div class="shelf-heading"><span class="section-kicker">YOUR NEXT PAGES / 最近使用</span><span>方向键选择 · A 继续 · X 更多</span></div>
-    <div class="recent-list"><VirtualList items={recent} itemKey={item => item.id} estimateSize={104} focusId={selected.id} label="最近使用作品" onselect={onselect}>
-      {#snippet children(item, index)}<button class="recent-card" class:current={selected.id === item.id} onclick={() => onselect(item)} ondblclick={() => onopen(item)}><span class="recent-no">{String(index + 1).padStart(2, "0")}</span>{#if item.cover?.src}<img src={item.cover.src} alt="" loading="lazy" />{:else}<span class="missing-art">{kinds[item.kind]}</span>{/if}<span class="recent-copy"><small>{kinds[item.kind]}</small><strong>{item.title}</strong><em>{item.progressLabel}</em></span><span class="arrow">↗</span></button>{/snippet}
-    </VirtualList></div>
-    {#if pinned.length}<div class="pinned"><span class="section-kicker">PINNED ISSUES / 置顶专题</span>{#each pinned as album}<button onclick={() => onalbum(album.id)}>{album.title}<small>{album.members.length} 部作品</small></button>{/each}</div>{/if}
+        <div class="stage-actions">
+          <button class="primary" disabled={!selected.actions.some(action => (action.id === "open" || action.id === "launch") && action.enabled)}
+            onclick={() => onopen(selected)}><Icon name={selected.kind === "game" ? "gamepad" : "play"} size={20} />{selected.primaryLabel}</button>
+          <button class="secondary" onclick={onmore}><Icon name="grid" size={18} />作品操作</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="recent-section" aria-label="最近使用">
+      <div class="section-heading"><div><h2>最近使用</h2><span>选一部作品，接着上次的位置</span></div><button onclick={onlibrary}>查看全部 <Icon name="arrowRight" size={16} /></button></div>
+      <div class="recent-rail">
+        <VirtualList items={recent} itemKey={item => item.id} orientation="horizontal" estimateSize={182}
+          focusId={selected.id} initialScrollOffset={recentOffset} onscroll={onrecentScroll} label="最近使用作品" onselect={onselect}>
+          {#snippet children(item)}
+            <button class="recent-card" class:selected={selected.id === item.id}
+              aria-label={item.title + "，" + item.progressLabel} onclick={() => onselect(item)} ondblclick={() => onopen(item)}>
+              <span class="thumb">
+                {#if item.cover?.src && !failedImages.includes(item.cover.src)}
+                  <img src={item.cover.src} alt="" loading="lazy" decoding="async" onerror={() => imageFailed(item.cover!.src)} />
+                {:else}<Icon name={kindIcon[item.kind]} size={38} stroke={1.1} />{/if}
+              </span>
+              <span class="recent-title">{item.title}</span><small>{item.progressLabel}</small>
+            </button>
+          {/snippet}
+        </VirtualList>
+      </div>
+    </section>
+    {#if pinned.length}
+      <section class="pinned-section" aria-label="置顶专题">
+        <h2>置顶专题</h2><div>{#each pinned as album}
+          <button onclick={() => onalbum(album.id)}><Icon name="collection" size={18} /><span>{album.title}</span><small>{album.members.length} 部作品</small></button>
+        {/each}</div>
+      </section>
+    {/if}
   </div>
 {:else}
-  <div class="welcome"><span class="section-kicker">MOEPLAY / VOL. 01</span><h1>从喜欢的作品开始</h1><p>在藏馆里挑一部游戏、番剧、漫画或小说。下次打开，会从这里接着使用。</p><div><button onclick={onlibrary}>打开藏馆</button><button onclick={onsearch}>搜索作品</button></div></div>
+  <div class="welcome"><span class="welcome-icon"><Icon name="collection" size={46} stroke={1.1} /></span>
+    <h1>从喜欢的作品开始</h1><p>游玩、观看或阅读后，这里会记住你的进度。</p>
+    <div><button class="primary" onclick={onlibrary}>打开藏馆</button><button onclick={onimport}>导入游戏</button><button onclick={onsearch}>搜索作品</button></div>
+  </div>
 {/if}
 
 <style>
-  .editorial-home { min-height:0;height:100%;display:flex;flex-direction:column;gap:9px;overflow:hidden; }
-  .issue-line,.shelf-heading {display:flex;justify-content:space-between;gap:12px;align-items:center;color:#f2eee1b8;font:700 11px/1.2 var(--font-mono,monospace);letter-spacing:.1em;}
-  .issue-line {border-bottom:2px solid var(--hh-accent);padding:4px 0 8px;} .hero-frame {flex:1;min-height:215px;overflow:hidden;}
-  :global(.editorial-stage) {width:100%;height:100%;position:relative;overflow:hidden;display:flex;align-items:center;gap:clamp(12px,3vw,42px);padding:clamp(12px,2vw,30px);box-sizing:border-box;}
-  .hero-wash {position:absolute;inset:0;background:linear-gradient(90deg,#111319eb 0%,#111319bd 65%,#111319b1 100%);pointer-events:none;}
-  .portrait,.hero-copy,.hero-index {position:relative;z-index:1;} .portrait {height:100%;width:min(31%,220px);flex:none;background:#f2eee31a;box-shadow:12px 12px 0 #e9657055;overflow:hidden;display:grid;place-items:center;} .portrait img {width:100%;height:100%;object-fit:cover;} .portrait span {color:#f2eee1;font-weight:800;}
-  .hero-copy {min-width:0;max-width:65%;display:flex;flex-direction:column;align-items:start;gap:8px;} .tag,.section-kicker {font:750 11px/1.2 var(--font-mono,monospace);letter-spacing:.13em;color:rgb(var(--media-accent-rgb,233,101,112));}
-  h1,p {margin:0;} .hero-copy h1 {max-width:100%;font-size:clamp(25px,3.7vw,58px);line-height:1.06;letter-spacing:-.045em;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;word-break:break-word;}
-  .chapter {color:#f3eee1;font-weight:650;} progress {width:min(360px,100%);height:5px;accent-color:rgb(var(--media-accent-rgb,233,101,112));}
-  .hero-actions {display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;} .hero-actions button {min-height:var(--hh-target,48px);padding:7px 18px;border:1px solid #fff8;background:#15161bb0;color:#f2eee1;font:inherit;font-weight:700;cursor:pointer;} .hero-actions .hero-primary {background:rgb(var(--media-accent-rgb,233,101,112));color:rgb(var(--media-on-accent-rgb,20,20,20));border:0;} .hero-primary span {margin-left:12px;} .hero-index {margin-left:auto;align-self:start;font:900 64px/.8 var(--font-mono,monospace);opacity:.23;}
-  .shelf-heading {border-bottom:1px solid #f2eee146;padding:2px 0 5px;} .recent-list {height:clamp(120px,22vh,230px);min-height:120px;} .recent-card {display:flex;width:100%;height:100%;align-items:center;text-align:left;gap:12px;border:0;border-bottom:1px solid #f2eee125;border-radius:0;background:#f2eee108;padding:8px;color:#f2eee1;cursor:pointer;} .recent-card.current {background:#f2eee11c;box-shadow:inset 4px 0 #e96570;}
-  .recent-no {font:800 20px var(--font-mono,monospace);color:#e96570;align-self:start;} .recent-card img,.missing-art {height:80px;width:62px;flex:none;object-fit:cover;background:#36333a;display:grid;place-items:center;font-size:12px;} .recent-copy {min-width:0;display:grid;gap:2px;flex:1;} .recent-copy strong,.recent-copy em {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;} .recent-copy small {color:#e96570;font-size:12px;} .recent-copy em {font-size:13px;font-style:normal;opacity:.75;} .arrow {font-size:22px;color:#e96570;}
-  .pinned {display:flex;align-items:center;gap:8px;min-height:42px;overflow-x:auto;}.pinned button {display:flex;gap:10px;align-items:center;white-space:nowrap;min-height:38px;border:1px solid #e9657066;border-radius:0;background:#e965701a;padding:5px 12px;color:#f2eee1;cursor:pointer;}.pinned small {opacity:.7;}
-  .welcome {display:flex;flex-direction:column;justify-content:center;align-items:start;height:100%;max-width:650px;gap:20px;} .welcome h1 {font-size:clamp(38px,5vw,72px);line-height:1.05;}.welcome p {font-size:18px;}.welcome div {display:flex;gap:10px;}.welcome button {border-radius:0;background:#e96570;color:#111;}
-  @media(max-width:960px) { .hero-frame {max-height:none;} .hero-index {display:none;} .portrait {width:28%;box-shadow:6px 6px 0 #e9657055;} .hero-copy {max-width:70%;} .shelf-heading>span:last-child {display:none;} }
-  @media(max-height:550px) { .issue-line,.pinned {display:none;} .hero-frame {min-height:145px;max-height:48%;}.hero-copy h1 {font-size:25px;}.portrait {width:19%;}.recent-list {min-height:84px;height:100px;}.recent-card img,.missing-art {height:64px;width:48px;} }
-  @media(prefers-reduced-motion:reduce) { :global(.editorial-stage) {transition:none!important;} }
+  .immersive-home {min-height:0;height:100%;overflow:auto;display:flex;flex-direction:column;gap:20px;scrollbar-width:thin;padding:2px 2px 18px;}
+  .feature-stage {position:relative;isolation:isolate;flex:none;min-height:300px;height:clamp(300px,43vh,520px);overflow:hidden;border-radius:24px;
+    background:radial-gradient(circle at 80% 35%,color-mix(in srgb,var(--hh-accent) 18%,white),transparent 47%),linear-gradient(125deg,#fcfbff,#e9eaf5);
+    box-shadow:0 18px 42px #35405a16;border:1px solid #8589ad2b;}
+  .feature-stage::after {content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#fafaff 0%,#fafaffeb 25%,#fafaff9c 46%,transparent 74%);}
+  .stage-art {position:absolute;right:3%;top:0;height:100%;width:52%;object-fit:contain;object-position:center right;filter:drop-shadow(0 18px 24px #34374726);}
+  .stage-art.wide {right:0;width:100%;object-fit:cover;object-position:center;mask-image:linear-gradient(to right,transparent 32%,#000 78%);}
+  .stage-pattern {position:absolute;right:6%;top:8%;bottom:8%;width:45%;display:grid;place-items:center;color:color-mix(in srgb,var(--hh-accent) 35%,white);
+    border:1px solid #9b9fbf3b;border-radius:32px;background:linear-gradient(150deg,#ffffff80,#e7e9f562);}
+  .stage-copy {position:relative;z-index:1;width:min(54%,600px);height:100%;padding:clamp(22px,3vw,48px);box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:clamp(10px,2vh,20px);}
+  .type-pill {display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:#ffffffc9;color:#4a456a;box-shadow:0 1px 8px #3c3b5b12;font-size:var(--hh-aux);font-weight:700;}
+  h1,h2,p {margin:0;} h1 {max-width:100%;font-size:clamp(28px,3.3vw,54px);line-height:1.12;letter-spacing:-.04em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:#202535;}
+  .progress-label {font-weight:650;color:#51596c;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  progress {width:min(360px,100%);height:7px;accent-color:var(--hh-accent);border-radius:8px;}
+  .stage-actions {display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;}
+  button {font:inherit;cursor:pointer;min-height:var(--hh-target,48px);color:#202535;}
+  .stage-actions button,.welcome button {display:inline-flex;align-items:center;justify-content:center;gap:9px;border-radius:12px;padding:9px 18px;font-weight:750;}
+  .primary {background:var(--hh-action,#6253b8);border:1px solid transparent;color:white!important;box-shadow:0 6px 14px #584ba33b;}
+  .primary:disabled {opacity:.48;box-shadow:none;cursor:default;}
+  .secondary {background:#ffffffdb;border:1px solid #c9cad9;box-shadow:0 3px 12px #3f496317;}
+  button:focus-visible {outline:3px solid #5746b9;outline-offset:3px;}
+  .recent-section {flex:none;min-height:0;}
+  .section-heading {display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:16px;}
+  .section-heading>div {display:flex;align-items:baseline;gap:14px;min-width:0;}
+  h2 {font-size:clamp(20px,1.7vw,30px);font-weight:760;letter-spacing:-.025em;color:#202535;}
+  .section-heading span {color:#697186;font-size:var(--hh-aux);}
+  .section-heading button {display:flex;align-items:center;gap:5px;min-height:44px;padding:0 6px;border:0;background:transparent;color:#51459b;font-weight:700;white-space:nowrap;}
+  .recent-rail {height:184px;min-height:184px;}
+  .recent-rail :global(.wh-virtual-list) {--wh-gap:12px;}
+  .recent-card {display:flex;flex-direction:column;align-items:stretch;gap:3px;width:100%;height:100%;padding:5px;border:2px solid transparent;border-radius:16px;background:transparent;text-align:left;}
+  .recent-card.selected {border-color:var(--hh-action,#6253b8);background:#ffffff;box-shadow:0 5px 14px #55478e26;}
+  .thumb {height:112px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:11px;color:#8172c6;background:linear-gradient(140deg,#eae7fb,#f7f4fa 65%,#ebeef7);}
+  .thumb img {width:100%;height:100%;object-fit:contain;}
+  .recent-title,.recent-card small {display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:4px;}
+  .recent-title {font-size:var(--hh-aux);font-weight:750;} .recent-card small {font-size:12px;color:#687185;}
+  .pinned-section {flex:none;padding-top:4px;} .pinned-section>div {display:flex;gap:10px;overflow:auto;margin-top:10px;}
+  .pinned-section button {display:flex;align-items:center;gap:8px;white-space:nowrap;border:1px solid #cfd1e3;border-radius:14px;background:#ffffffb8;padding:8px 13px;}.pinned-section small {color:#697186;}
+  .welcome {min-height:100%;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:16px;max-width:680px;margin:auto;}
+  .welcome-icon {width:86px;height:86px;display:grid;place-items:center;border-radius:24px;background:#e8e4fa;color:#6957c3;}
+  .welcome p {color:#697186;font-size:var(--hh-body);}.welcome>div {display:flex;gap:10px;flex-wrap:wrap;}.welcome button:not(.primary) {border:1px solid #cfd1e3;background:#fff;}
+  @media(max-width:960px) {.feature-stage {height:clamp(260px,45vh,420px);} .stage-copy {width:66%;padding:20px;} .stage-art:not(.wide) {right:1%;width:45%;opacity:.65;} .section-heading span {display:none;}}
+  @media(max-height:550px) {.feature-stage {min-height:246px;height:246px;} .stage-copy {gap:6px;padding:16px;width:72%;}.stage-copy h1 {font-size:26px;}.stage-art {opacity:.42;}.recent-rail {height:160px;min-height:160px;}.thumb {height:91px;}}
+  @media(prefers-reduced-motion:reduce) {.feature-stage,.recent-card {transition:none;}}
 </style>

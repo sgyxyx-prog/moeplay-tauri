@@ -10,6 +10,7 @@
     itemKey: (item: T) => string;
     estimateSize?: number;
     columns?: number;
+    orientation?: "vertical" | "horizontal";
     children: Snippet<[T, number]>;
     focusId?: string | null;
     /** Consumed only when the list mounts; subsequent scrolls belong to the user. */
@@ -20,7 +21,7 @@
     label?: string;
     class?: string;
   }
-  let { items, itemKey, estimateSize = 72, columns = 1, children, focusId = null, initialScrollOffset = 0,
+  let { items, itemKey, estimateSize = 72, columns = 1, orientation = "vertical", children, focusId = null, initialScrollOffset = 0,
     onselect, onscroll, overlayId = null, label = "内容列表", class: className = "" }: Props = $props();
   let root = $state<HTMLDivElement>();
   let pinnedId = $state<string | null>(null);
@@ -30,7 +31,8 @@
   let layoutVersion = 0;
   let previousKeys: string[] = [];
   const elements = new Map<string, HTMLElement>();
-  const safeColumns = $derived(Math.max(1, Math.floor(columns) || 1));
+  const horizontal = $derived(orientation === "horizontal");
+  const safeColumns = $derived(horizontal ? 1 : Math.max(1, Math.floor(columns) || 1));
   const rowHeight = $derived(Math.max(1, estimateSize || 72));
   const keys = $derived(items.map(itemKey));
   const indexes = $derived(new Map(keys.map((key, index) => [key, index])));
@@ -63,6 +65,7 @@
       count,
       getScrollElement: () => scrollElement ?? null,
       estimateSize: () => height,
+      horizontal,
       getItemKey: (index) => rowKeys[index * columnCount] ?? index,
       rangeExtractor: (range) => includePinnedRow(defaultRangeExtractor(range), pinned, count),
     }));
@@ -72,9 +75,12 @@
 
   function nextFocusId(direction: FocusDirection): string | null {
     if (!canFocus() || !root?.contains(document.activeElement)) return null;
+    if (horizontal && (direction === "up" || direction === "down")) return null;
     const active = document.activeElement?.closest<HTMLElement>("[data-virtual-item-id]")?.dataset.virtualItemId;
-    const next = adjacentItemIndex(indexes.get(active ?? selectedId ?? "") ?? -1, items.length, safeColumns, direction);
-    return next === null ? null : keys[next];
+    const index = indexes.get(active ?? selectedId ?? "") ?? -1;
+    const next = horizontal ? index + (direction === "right" ? 1 : -1)
+      : adjacentItemIndex(index, items.length, safeColumns, direction);
+    return next === null || next < 0 || next >= items.length ? null : keys[next];
   }
 
   export async function moveFocus(direction: FocusDirection): Promise<boolean> {
@@ -159,7 +165,7 @@
   });
 
   $effect(() => {
-    safeColumns; rowHeight;
+    safeColumns; rowHeight; horizontal;
     untrack(() => {
       cancelFocus();
       get(virtualizer).measure();
@@ -205,14 +211,14 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (delegates directional keys from interactive children) -->
-<div bind:this={root} class="wh-virtual-list {className}" role="group" aria-label={label} tabindex="-1"
+<div bind:this={root} class="wh-virtual-list {className}" class:horizontal role="group" aria-label={label} tabindex="-1"
   data-testid="handheld-virtual-list" onfocusin={handleFocus} onfocusout={handleBlur}
   onkeydown={handleKeydown}
-  onscroll={() => { if (root) onscroll?.(root.scrollTop); }}>
-  <div class="wh-virtual-list__space" style:height={`${$virtualizer.getTotalSize()}px`}>
+  onscroll={() => { if (root) onscroll?.(horizontal ? root.scrollLeft : root.scrollTop); }}>
+  <div class="wh-virtual-list__space" style:height={horizontal ? "100%" : `${$virtualizer.getTotalSize()}px`} style:width={horizontal ? `${$virtualizer.getTotalSize()}px` : "100%"}>
     {#each $virtualizer.getVirtualItems() as row (row.key)}
-      <div class="wh-virtual-list__row" data-index={row.index} style:height={`${rowHeight}px`}
-        style:transform={`translateY(${row.start}px)`} style:grid-template-columns={`repeat(${safeColumns}, minmax(0, 1fr))`}>
+      <div class="wh-virtual-list__row" class:horizontal data-index={row.index} style:height={horizontal ? "100%" : `${rowHeight}px`}
+        style:width={horizontal ? `${rowHeight}px` : "100%"} style:transform={horizontal ? `translateX(${row.start}px)` : `translateY(${row.start}px)`} style:grid-template-columns={`repeat(${safeColumns}, minmax(0, 1fr))`}>
         {#each items.slice(row.index * safeColumns, (row.index + 1) * safeColumns) as item, offset (itemKey(item))}
           <div class="wh-virtual-list__item" use:bindItem={itemKey(item)} data-virtual-item-id={itemKey(item)} tabindex="-1">
             {@render children(item, row.index * safeColumns + offset)}
@@ -229,4 +235,7 @@
   .wh-virtual-list__row { position: absolute; top: 0; left: 0; display: grid; width: 100%; gap: var(--wh-gap, 12px); }
   .wh-virtual-list__item { min-width: 0; min-height: 0; padding-bottom: var(--wh-gap, 12px); box-sizing: border-box; }
   .wh-virtual-list__item:focus-visible { outline: 2px solid var(--accent, #ee8095); outline-offset: -2px; }
+  .wh-virtual-list.horizontal { overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity; }
+  .wh-virtual-list__row.horizontal { scroll-snap-align:start; }
+  .wh-virtual-list__row.horizontal .wh-virtual-list__item { padding-bottom:0;padding-right:var(--wh-gap,12px); }
 </style>
