@@ -2,6 +2,7 @@
   import Icon from "../../components/Icon.svelte";
   import VirtualList from "./VirtualList.svelte";
   import WorkFallback from "./WorkFallback.svelte";
+  import animeBackdrop from "../../assets/themes/borderless-lumen/wallpaper-1-v245.webp";
   import { catalogStore } from "./catalog.svelte";
   import { displayProfile } from "./profile.svelte";
   import type { HandheldContentItem } from "./types";
@@ -16,6 +17,7 @@
   const recent = $derived(items.slice(0, 24));
   const pinned = $derived(catalogStore.albums.filter(album => album.pinned).slice(0, 4));
   let failedImages = $state<string[]>([]);
+  let fallbackFailed = $state(false);
   const coverSrc = $derived(selected?.cover?.src && !failedImages.includes(selected.cover.src) ? selected.cover.src : null);
   const backdropSrc = $derived(selected?.hero?.src && !failedImages.includes(selected.hero.src)
     ? selected.hero.src : coverSrc);
@@ -29,12 +31,14 @@
       {#if backdropSrc}
         <img class:wide={wideArt} class="stage-art" src={backdropSrc} alt="" decoding="async"
           onerror={() => imageFailed(backdropSrc)} />
+      {:else if !fallbackFailed}
+        <img class="stage-art character" src={animeBackdrop} alt="" decoding="async" onerror={() => fallbackFailed = true} />
       {:else}
         <div class="stage-pattern" aria-hidden="true"><span>{kinds[selected.kind]}</span><strong>{Array.from(selected.title).slice(0, 2).join("")}</strong><i></i></div>
       {/if}
       <div class="stage-copy">
         <span class="type-pill"><Icon name={kindIcon[selected.kind]} size={17} />{kinds[selected.kind]} · 接着上次</span>
-        <h1>{selected.title}</h1>
+        <h1 title={selected.title}>{selected.title}</h1>
         <p class="progress-label">{selected.progressLabel}</p>
         {#if selected.progress !== null}<progress value={selected.progress} max="1" aria-label="内容进度"></progress>{/if}
         <div class="stage-actions">
@@ -84,18 +88,19 @@
   .feature-stage {position:relative;isolation:isolate;flex:none;min-height:300px;height:clamp(300px,43vh,520px);overflow:hidden;border-radius:24px;
     background:radial-gradient(circle at 82% 20%,color-mix(in srgb,var(--hh-accent) 42%,#415875),transparent 48%),linear-gradient(120deg,#121b31,#273451 70%,#596380);
     box-shadow:0 18px 42px #22304a29;border:1px solid #4d5873;}
-  .feature-stage::after {content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#111a30 0%,#111a30ee 28%,#111a30ad 49%,transparent 79%);}
+  .feature-stage::after {content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#111a30 0%,#111a30f0 29%,#111a30b8 47%,#111a3020 79%);}
   .stage-art {position:absolute;right:3%;top:0;height:100%;width:52%;object-fit:contain;object-position:center right;filter:drop-shadow(0 18px 24px #34374726);}
   .stage-art.wide {right:0;width:100%;object-fit:cover;object-position:center;mask-image:linear-gradient(to right,transparent 20%,#000 72%);}
+  .stage-art.character {right:0;width:63%;object-fit:cover;object-position:79% 17%;}
   .stage-pattern {position:absolute;right:5%;top:8%;bottom:8%;width:44%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;overflow:hidden;border:1px solid #ffffff3a;border-radius:28px;background:linear-gradient(145deg,#a8b2d126,#d5aab32d);color:#fff;transform:rotate(2deg);}
   .stage-pattern::before {content:"";position:absolute;width:65%;aspect-ratio:1;border:1px solid #ffffff55;border-radius:50%;box-shadow:0 0 0 22px #ffffff13,0 0 0 46px #ffffff0d;}
   .stage-pattern span {z-index:1;font-size:13px;font-weight:800;letter-spacing:.24em;}.stage-pattern strong {z-index:1;font-size:clamp(56px,8vw,150px);letter-spacing:-.14em;line-height:1;text-shadow:0 10px 25px #111a3066;}.stage-pattern i {z-index:1;width:18%;height:3px;background:#ffffffce;}
-  .stage-copy {position:relative;z-index:1;width:min(54%,600px);height:100%;padding:clamp(22px,3vw,48px);box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:clamp(10px,2vh,20px);}
+  .stage-copy {position:relative;z-index:1;width:min(54%,600px);height:100%;padding:clamp(16px,1.8vw,26px);box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:clamp(6px,1vh,10px);}
   .type-pill {display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:#ffffff25;color:#f6f4ff;border:1px solid #ffffff55;font-size:var(--hh-aux);font-weight:700;}
-  h1,h2,p {margin:0;} h1 {max-width:100%;font-size:clamp(28px,3.3vw,54px);line-height:1.12;letter-spacing:-.04em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:#fff;}
-  .progress-label {font-weight:650;color:#e1e5f0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  h1,h2,p {margin:0;} h1 {max-width:100%;flex-shrink:0;font-size:clamp(28px,2.9vw,48px);line-height:1.12;letter-spacing:-.04em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;overflow-wrap:anywhere;color:#fff;}
+  .progress-label {flex-shrink:0;font-weight:650;color:#e1e5f0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   progress {width:min(360px,100%);height:7px;accent-color:var(--hh-accent);border-radius:8px;}
-  .stage-actions {display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;}
+  .stage-actions {flex-shrink:0;display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;}
   button {font:inherit;cursor:pointer;min-height:var(--hh-target,48px);color:#202535;}
   .stage-actions button,.welcome button {display:inline-flex;align-items:center;justify-content:center;gap:9px;border-radius:12px;padding:9px 18px;font-weight:750;}
   .primary {background:#eee9ff;border:1px solid transparent;color:#242046!important;box-shadow:0 6px 14px #080e1f40;}
@@ -121,7 +126,7 @@
   .welcome {min-height:100%;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:16px;max-width:680px;margin:auto;}
   .welcome-icon {width:86px;height:86px;display:grid;place-items:center;border-radius:24px;background:#e8e4fa;color:#6957c3;}
   .welcome p {color:#697186;font-size:var(--hh-body);}.welcome>div {display:flex;gap:10px;flex-wrap:wrap;}.welcome button:not(.primary) {border:1px solid #cfd1e3;background:#fff;}
-  @media(max-width:960px) {.feature-stage {height:clamp(260px,45vh,420px);} .stage-copy {width:66%;padding:20px;} .stage-art:not(.wide) {right:1%;width:45%;opacity:.65;} .section-heading span {display:none;}}
-  @media(max-height:550px) {.feature-stage {min-height:246px;height:246px;} .stage-copy {gap:6px;padding:16px;width:72%;}.stage-copy h1 {font-size:26px;}.stage-art {opacity:.42;}.recent-rail {height:160px;min-height:160px;}.thumb {height:91px;}}
+  @media(max-width:960px) {.feature-stage {height:clamp(260px,45vh,420px);} .stage-copy {width:66%;padding:20px;} .stage-art:not(.wide) {right:1%;width:45%;opacity:.65;} .stage-art.character {right:0;width:58%;}.section-heading span {display:none;}}
+  @media(max-height:550px) {.feature-stage {min-height:246px;height:246px;} .stage-copy {gap:6px;padding:16px;width:72%;}.stage-copy h1 {font-size:26px;-webkit-line-clamp:2;line-clamp:2;}.stage-art {opacity:.42;}.recent-rail {height:160px;min-height:160px;}.thumb {height:91px;}}
   @media(prefers-reduced-motion:reduce) {.feature-stage,.recent-card {transition:none;}}
 </style>

@@ -30,13 +30,9 @@ import astralRailBlur2 from "./assets/themes/astral-rail/wallpaper-2-blur.jpg";
 import astralRailBlur3 from "./assets/themes/astral-rail/wallpaper-3-blur.jpg";
 import astralRailPreview from "./assets/themes/astral-rail/preview.jpg";
 import astralRailMascot from "./assets/themes/astral-rail/mascot.png";
-import borderlessLumen1 from "./assets/themes/borderless-lumen/wallpaper-1.jpg";
-import borderlessLumen2 from "./assets/themes/borderless-lumen/wallpaper-2.jpg";
-import borderlessLumen3 from "./assets/themes/borderless-lumen/wallpaper-3.jpg";
-import borderlessLumenBlur1 from "./assets/themes/borderless-lumen/wallpaper-1-blur.jpg";
-import borderlessLumenBlur2 from "./assets/themes/borderless-lumen/wallpaper-2-blur.jpg";
-import borderlessLumenBlur3 from "./assets/themes/borderless-lumen/wallpaper-3-blur.jpg";
-import borderlessLumenPreview from "./assets/themes/borderless-lumen/preview.jpg";
+import borderlessLumen1 from "./assets/themes/borderless-lumen/wallpaper-1-v245.webp";
+import borderlessLumen2 from "./assets/themes/borderless-lumen/wallpaper-2-v245.webp";
+import borderlessLumen3 from "./assets/themes/borderless-lumen/wallpaper-3-v245.webp";
 import borderlessLumenMascot from "./assets/themes/borderless-lumen/mascot.png";
 
 export type ThemePackId = "shift-editorial" | "phantom-pop" | "caution-industrial" | "astral-rail" | "borderless-lumen";
@@ -95,9 +91,9 @@ export const THEME_PACKS: ThemePackDefinition[] = [
     wallpapers: [wallpaper("astral-rail", 1, "银河铁道", astralRail1, astralRailBlur1), wallpaper("astral-rail", 2, "星图连线", astralRail2, astralRailBlur2), wallpaper("astral-rail", 3, "晨曦跃迁", astralRail3, astralRailBlur3)],
   },
   {
-    id: "borderless-lumen", label: "无界流光", description: "墨黑主机、暖白文字与电光青，给封面与内容留出舞台。", defaultColorMode: "dark", decoration: "petals",
-    preview: borderlessLumenPreview, mascot: borderlessLumenMascot,
-    wallpapers: [wallpaper("borderless-lumen", 1, "花舞光场", borderlessLumen1, borderlessLumenBlur1), wallpaper("borderless-lumen", 2, "水镜流光", borderlessLumen2, borderlessLumenBlur2), wallpaper("borderless-lumen", 3, "萤火之森", borderlessLumen3, borderlessLumenBlur3)],
+    id: "borderless-lumen", label: "无界流光", description: "原创看板角色的旅途场景，深色阅读面与柔和紫调让作品画面成为主角。", defaultColorMode: "dark", decoration: "petals",
+    preview: borderlessLumen1, mascot: borderlessLumenMascot,
+    wallpapers: [wallpaper("borderless-lumen", 1, "暮色站台", borderlessLumen1, borderlessLumen1), wallpaper("borderless-lumen", 2, "雨夜书屋", borderlessLumen2, borderlessLumen2), wallpaper("borderless-lumen", 3, "河畔夏祭", borderlessLumen3, borderlessLumen3)],
   },
 ];
 

@@ -68,7 +68,7 @@ export function generateManifest(directory, options = {}) {
   const commit = options.commit ?? execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   const files = fs.readdirSync(directory).filter(name => /\.(exe|msi|zip|apk)$/.test(name) && name.includes(version));
   const manifest = { schemaVersion: 1, version, commit, publishedAt: options.publishedAt ?? new Date().toISOString(),
-    notes: options.notes ?? ["电脑端使用系统输入法和实体键盘，不再弹出应用虚拟键盘", "修复隐藏视频解析窗口发声和退出后残留音频", "以实际视频帧检测黑屏与卡流，支持重试和换源", "修复快速切源旧请求覆盖与 Provider v2 切源", "画质增强失败自动恢复原始视频，便携包补齐内置规则", "保留 v0.23 漫画精确续读、小说按书历史和阅读备份"],
+    notes: options.notes ?? ["新掌机首页在缺图时展示原创二次元看板角色场景，长标题与进度保持可读", "默认主题新增暮色站台、雨夜书屋和河畔夏祭三张壁纸，并统一柔和紫调", "保留作品原图优先、自定义壁纸、收藏专题与原有游戏和阅读进度", "Windows 16:10 掌机适配覆盖 800p、1200p、1600p 与常见 DPI 缩放"],
     androidCompatibilityVerified: options.androidCompatibilityVerified === true,
     assets: files.sort().map(file => describeAsset(directory, file, version)) };
   if (options.androidVerification ?? options.androidUpgradeReports ?? options.androidReports) {
