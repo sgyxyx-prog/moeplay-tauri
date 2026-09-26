@@ -15,6 +15,16 @@ struct RunningEntry {
     session_id: String,
     game_id: String,
     started_at: std::time::Instant,
+    #[cfg(windows)]
+    process_identity: Option<u64>,
+}
+
+/// Backend-only activation identity. Never accepts a frontend-provided PID.
+#[cfg(any(windows, test))]
+pub(crate) struct TrackedGameProcess {
+    pub pid: u32,
+    #[cfg(windows)]
+    pub identity: Option<u64>,
 }
 
 /// 进程监视器。被 Tauri `.manage()` 注入。
@@ -38,6 +48,8 @@ impl ProcessMonitor {
                 session_id: session_id.to_string(),
                 game_id: game_id.to_string(),
                 started_at: std::time::Instant::now(),
+                #[cfg(windows)]
+                process_identity: crate::windows_handheld::process_identity(child_id),
             },
         );
         tracing::info!(child_id, session_id, game_id, "Registered running game");
@@ -90,6 +102,30 @@ impl ProcessMonitor {
                 pid: *pid,
             })
             .collect()
+    }
+
+    /// Runs a bounded window-activation action only for this game's current tracked
+    /// processes. Keep the lock until it completes so unregister cannot race it.
+    #[cfg(any(windows, test))]
+    pub(crate) fn with_tracked_game_processes<T>(
+        &self,
+        game_id: &str,
+        action: impl FnOnce(&[TrackedGameProcess]) -> T,
+    ) -> Option<T> {
+        let running = self.running.lock().ok()?;
+        let processes: Vec<_> = running
+            .iter()
+            .filter(|(_, entry)| entry.game_id == game_id)
+            .map(|(pid, _entry)| TrackedGameProcess {
+                pid: *pid,
+                #[cfg(windows)]
+                identity: _entry.process_identity,
+            })
+            .collect();
+        if processes.is_empty() {
+            return None;
+        }
+        Some(action(&processes))
     }
 
     /// 手动标记某个 session 已结束。
@@ -151,9 +187,27 @@ fn spawn_wait_thread(name: String, waiter: impl FnOnce() + Send + 'static) -> st
 
 #[cfg(test)]
 mod tests {
-    use super::spawn_wait_thread;
+    use super::{spawn_wait_thread, ProcessMonitor};
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn activation_scope_never_includes_another_game_or_ended_session() {
+        let monitor = ProcessMonitor::new();
+        monitor.register(1, "session-a", "game-a");
+        monitor.register(2, "session-b", "game-b");
+        assert_eq!(
+            monitor.with_tracked_game_processes("game-a", |processes| processes
+                .iter()
+                .map(|process| process.pid)
+                .collect::<Vec<_>>()),
+            Some(vec![1])
+        );
+        assert_eq!(monitor.with_tracked_game_processes("unknown", |_| ()), None);
+        monitor.unregister_by_session("session-a");
+        assert_eq!(monitor.with_tracked_game_processes("game-a", |_| ()), None);
+        assert_eq!(monitor.running_count(), 1);
+    }
 
     #[test]
     fn process_wait_thread_does_not_require_a_tokio_runtime() {

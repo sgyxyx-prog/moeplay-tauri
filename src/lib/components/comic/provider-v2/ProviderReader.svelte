@@ -1,6 +1,6 @@
 <script lang="ts">
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import { bookKey, readingRepository } from "../../../features/reading-history/repository";
   import { focusTrap } from "../../../actions/a11y/focusTrap";
   import { openPath, openUrl } from "../../../api";
@@ -9,6 +9,9 @@
   import type { ComicProviderDescriptor, ComicResolvedTarget } from "../../../features/comic/types";
   import Icon from "../../Icon.svelte";
   import { Button, EmptyState, Tag } from "../../ui";
+  import { displayProfile } from "../../../features/windows-handheld/profile.svelte";
+  import { mediaSurface } from "../../../features/windows-handheld/mediaSession";
+  import { closeTopOverlay, routerStore } from "../../../stores/router.svelte";
 
   let {
     provider,
@@ -43,6 +46,22 @@
   let retryingTarget = $state(false);
   let generation = 0;
   let historyReady = false;
+  let pageFrame = $state<HTMLDivElement>();
+  let settingsOpen = $state(false);
+  const fitKey = $derived(`moeplay-provider-reader-fit:${provider.id}:${seriesId}`);
+  let widthFit = $state(false);
+  $effect(() => {
+    const key = fitKey;
+    const enabled = displayProfile.enabled;
+    untrack(() => {
+      try { widthFit = enabled && localStorage.getItem(key) !== "screen"; }
+      catch { widthFit = enabled; }
+    });
+  });
+  function toggleImageFit() {
+    widthFit = !widthFit;
+    try { localStorage.setItem(fitKey, widthFit ? "width" : "screen"); } catch { /* Session preference still applies. */ }
+  }
   function savePosition() {
     if (!historyReady) return;
     const updatedAt = Date.now();
@@ -147,6 +166,7 @@
     const next = Math.min(decision.pages.length - 1, Math.max(0, pageIndex + delta));
     if (next === pageIndex) return;
     pageIndex = next;
+    if (pageFrame) pageFrame.scrollTop = 0;
     savePosition();
     loadingPage = !pageSources[next];
     pageError = "";
@@ -154,12 +174,17 @@
     prefetchNeighbors(next);
   }
 
-  function closeReader() {
+  async function closeReader() {
     savePosition();
     onclose();
+    if (returnFocusKey) {
+      await tick();
+      document.querySelector<HTMLElement>(`[data-chapter-focus-key="${CSS.escape(returnFocusKey)}"]`)?.focus({ preventScroll: true });
+    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (displayProfile.enabled && routerStore.topOverlay?.id !== "windows-provider-reader") return;
     if (event.target instanceof HTMLInputElement) return;
     if (event.key === "Escape") closeReader();
     if (event.key === "ArrowLeft") movePage(-1);
@@ -200,7 +225,12 @@
   });
 </script>
 
-<div class="reader" role="dialog" aria-modal="true" aria-label={`阅读 ${title}`} tabindex="-1" data-return-focus-key={returnFocusKey} use:focusTrap={{ initialFocus: ".provider-reader-close", returnFocus: false, onEscape: closeReader }} onkeydown={handleKeydown}>
+<div class="reader" class:windows-reader={displayProfile.enabled} class:width-fit={displayProfile.enabled && widthFit} role="dialog" aria-modal="true" aria-label={`阅读 ${title}`} tabindex="-1" data-return-focus-key={returnFocusKey} use:focusTrap={{ initialFocus: ".provider-reader-close", returnFocus: false, onEscape: () => { if (displayProfile.enabled) closeTopOverlay(); else closeReader(); } }} onkeydown={handleKeydown}
+  use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-provider-reader", onBack: closeReader, handlers: decision.kind === "images" && !pageError ? {
+    left: () => movePage(-1), right: () => movePage(1), pageLeft: () => movePage(-1), pageRight: () => movePage(1), launch: () => movePage(1),
+    up: () => pageFrame?.scrollBy({ top: -240, behavior: "smooth" }), down: () => pageFrame?.scrollBy({ top: 240, behavior: "smooth" }),
+    favorite: closeReader, activate: () => { settingsOpen = !settingsOpen; },
+  } : {} }}>
   <header class="reader-bar">
     <Button class="provider-reader-close" variant="quiet" size="sm" press={closeReader}><Icon name="chevronLeft" size={16} />返回章节</Button>
     <div class="reader-title">
@@ -208,7 +238,7 @@
       <span>{chapterTitle}</span>
     </div>
     {#if decision.kind === "images"}
-      <Tag variant="muted">{pageIndex + 1} / {decision.pages.length}</Tag>
+      <div class="reader-header-actions"><Tag variant="muted">{pageIndex + 1} / {decision.pages.length}</Tag>{#if displayProfile.enabled}<Button variant="quiet" size="sm" press={() => { settingsOpen = !settingsOpen; }}>阅读设置</Button>{/if}</div>
     {:else}
       <span></span>
     {/if}
@@ -217,7 +247,7 @@
   {#if decision.kind === "images"}
     <main class="reader-stage">
       <button class="page-hit previous" type="button" aria-label="上一页" disabled={pageIndex === 0} onclick={() => movePage(-1)}></button>
-      <div class="page-frame" aria-live="polite">
+      <div class="page-frame" aria-live="polite" bind:this={pageFrame}>
         {#if loadingPage}
           <div class="page-loading"><span></span><p>正在准备第 {pageIndex + 1} 页</p></div>
         {/if}
@@ -246,6 +276,7 @@
       <input aria-label="阅读页码" type="range" min="1" max={decision.pages.length} value={pageIndex + 1} oninput={(event) => {
         const next = Number(event.currentTarget.value) - 1;
         pageIndex = next;
+        if (pageFrame) pageFrame.scrollTop = 0;
         savePosition();
         loadingPage = !pageSources[next];
         pageError = "";
@@ -271,9 +302,25 @@
       <EmptyState icon="shield" title="无法安全打开此章节" description={decision.reason} action={onretry ? { label: retryingTarget ? "重试中..." : "重新解析", onclick: retryTarget } : undefined} />
     </div>
   {/if}
+  {#if displayProfile.enabled && settingsOpen}
+    <aside class="reader-settings" aria-label="阅读设置" use:mediaSurface={{ enabled: true, id: "windows-provider-reader-settings", menu: true, onBack: () => { settingsOpen = false; } }}>
+      <button type="button" onclick={() => { settingsOpen = false; }}>返回阅读</button>
+      <button type="button" onclick={toggleImageFit}>图片适配：{widthFit ? "适合宽度" : "适合整页"}</button>
+      <button type="button" onclick={closeReader}>返回章节</button>
+    </aside>
+  {/if}
 </div>
 
 <style>
+  @media (max-width: 700px) { .windows-reader .reader-settings { inset: 0; width: 100%; } }
+  .windows-reader .reader-title strong { font-size: 18px; }
+  .windows-reader .reader-title span { font-size: 14px; }
+  .windows-reader .reader-bar :global(button), .windows-reader .reader-controls :global(button) { min-height: 48px; font-size: 16px; }
+  .reader-header-actions { display: flex; gap: 8px; align-items: center; }
+  .width-fit .page-frame { align-items: flex-start; }
+  .width-fit .page-frame img { width: 100%; max-height: none; height: auto; }
+  .reader-settings { position: absolute; z-index: 5; inset: 70px 16px 20px auto; width: min(380px,42vw); display: flex; flex-direction: column; gap: 12px; padding: 20px; background: #121722; border: 1px solid #ffffff38; }
+  .reader-settings button { min-height: 48px; color: inherit; background: #202938; border: 1px solid #ffffff38; font-size: 16px; }
   .reader { position: absolute; inset: 0; z-index: 50; display: grid; grid-template-rows: auto minmax(0,1fr) auto; background: rgba(8,10,14,.985); color: var(--text-primary); }
   .reader-bar { min-height: 58px; padding: 8px 14px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: minmax(120px,1fr) minmax(0,2fr) minmax(120px,1fr); align-items: center; gap: 12px; background: rgba(13,15,21,.94); }
   .reader-bar > :last-child { justify-self: end; }

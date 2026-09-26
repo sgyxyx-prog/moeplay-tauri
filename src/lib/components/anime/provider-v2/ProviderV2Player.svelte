@@ -1,6 +1,10 @@
 <script lang="ts">
   import { convertFileSrc } from "@tauri-apps/api/core";
   import Hls from "hls.js";
+  import { onMount } from "svelte";
+  import { displayProfile } from "../../../features/windows-handheld/profile.svelte";
+  import { mediaSurface, createMediaPauseGuard } from "../../../features/windows-handheld/mediaSession";
+  import { closeTopOverlay } from "../../../stores/router.svelte";
   import { releaseVideo, watchVideoProgress } from "../../../player/videoProgress";
   import type { AnimeEpisode, AnimeResolveResponse } from "../../../features/anime";
   import Icon from "../../Icon.svelte";
@@ -29,6 +33,21 @@
   let mediaAspectRatio = $state(16 / 9);
   let hls: Hls | null = null;
   let frameWatch: ReturnType<typeof watchVideoProgress> | null = null;
+  let settingsOpen = $state(false);
+  let resumeSeconds = 0;
+  let activeEpisodeKey = "";
+  const pauseGuard = createMediaPauseGuard(() => videoElement, () => displayProfile.enabled);
+  onMount(() => pauseGuard.mount());
+
+  function togglePlayback() {
+    if (!videoElement) return;
+    pauseGuard.allowPlayback();
+    if (videoElement.paused) void videoElement.play().catch(() => undefined);
+    else videoElement.pause();
+  }
+  function seek(delta: number) {
+    if (videoElement) videoElement.currentTime = Math.max(0, Math.min(videoElement.duration || Infinity, videoElement.currentTime + delta));
+  }
 
   const target = $derived(resolution.target);
   const canPlayInternally = $derived(target.mode === "native_hls" || target.mode === "native_file");
@@ -48,6 +67,7 @@
   });
 
   function destroyPlayback() {
+    if (videoElement && videoElement.currentTime > 0) resumeSeconds = videoElement.currentTime;
     frameWatch?.dispose();
     frameWatch = null;
     hls?.destroy();
@@ -58,6 +78,7 @@
   }
 
   function updateMediaRatio() {
+    if (videoElement && resumeSeconds > 0 && Number.isFinite(videoElement.duration)) videoElement.currentTime = Math.min(resumeSeconds, videoElement.duration);
     if (!videoElement?.videoWidth || !videoElement.videoHeight) return;
     mediaAspectRatio = videoElement.videoWidth / videoElement.videoHeight;
   }
@@ -69,6 +90,11 @@
 
   function attachPlayback() {
     destroyPlayback();
+    const key = `${episode.identity.providerId}:${episode.identity.seriesId}:${episode.identity.episodeId}`;
+    if (activeEpisodeKey !== key) {
+      resumeSeconds = 0;
+      activeEpisodeKey = key;
+    }
     playbackError = "";
     mediaAspectRatio = 16 / 9;
     if (!videoElement) return;
@@ -122,7 +148,11 @@
   aria-labelledby="provider-player-title"
   aria-describedby="provider-player-description"
   tabindex="-1"
-  use:focusTrap={{ initialFocus: '[data-provider-player-close]', returnFocus: true, closeOnEscape: true, onEscape: onClose }}
+  use:focusTrap={{ initialFocus: '[data-provider-player-close]', returnFocus: true, closeOnEscape: true, onEscape: () => { if (displayProfile.enabled) closeTopOverlay(); else onClose(); } }}
+  use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-provider-player", onBack: onClose, handlers: playbackError || !canPlayInternally ? {} : {
+    launch: togglePlayback, left: () => seek(-10), right: () => seek(10),
+    favorite: onClose, activate: () => { settingsOpen = !settingsOpen; },
+  } }}
 >
   <span class="sr-only" id="provider-player-title">{seriesTitle}</span>
   <span class="sr-only" id="provider-player-description">{episode.title}</span>
@@ -138,6 +168,9 @@
     stageLabel={`${seriesTitle} ${episode.title} 播放区域`}
   >
     {#snippet headerActions()}
+      {#if displayProfile.enabled && canPlayInternally}
+        <button type="button" class="icon-button" aria-label="播放设置" onclick={() => { settingsOpen = !settingsOpen; }}><Icon name="settings" size={18} /></button>
+      {/if}
       <button class="icon-button" data-provider-player-close type="button" aria-label="关闭播放器并返回剧集" onclick={onClose}>
         <Icon name="x" size={18} />
       </button>
@@ -153,6 +186,8 @@
             playsinline
             preload="metadata"
             onloadedmetadata={updateMediaRatio}
+            onplay={() => pauseGuard.acceptPlay()}
+            onpointerdown={() => pauseGuard.allowPlayback()}
             onerror={handleVideoError}
             aria-label={`${seriesTitle} ${episode.title}`}
           ></video>
@@ -188,9 +223,22 @@
       </div>
     {/snippet}
   </AnimePlaybackShell>
+  {#if displayProfile.enabled && settingsOpen}
+    <aside class="windows-playback-settings" aria-label="播放设置" use:mediaSurface={{ enabled: true, id: "windows-provider-settings", menu: true, onBack: () => { settingsOpen = false; } }}>
+      <button type="button" onclick={() => { settingsOpen = false; }}>返回播放</button>
+      <button type="button" onclick={togglePlayback}>播放 / 暂停</button>
+      <button type="button" onclick={() => seek(-10)}>后退 10 秒</button>
+      <button type="button" onclick={() => seek(10)}>前进 10 秒</button>
+      <label>音量 <input type="range" aria-label="音量" min="0" max="1" step="0.1" value={videoElement?.volume ?? 1} oninput={event => { if (videoElement) videoElement.volume = Number(event.currentTarget.value); }} /></label>
+      <label>倍速 <select aria-label="倍速" value={String(videoElement?.playbackRate ?? 1)} onchange={event => { if (videoElement) videoElement.playbackRate = Number(event.currentTarget.value); }}><option value="0.75">0.75x</option><option value="1">1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></label>
+    </aside>
+  {/if}
 </div>
 
 <style>
+  .windows-playback-settings { position: absolute; z-index: 2; top: 70px; right: 20px; bottom: 20px; width: min(380px, 42vw); display: flex; flex-direction: column; gap: 12px; padding: 20px; background: #121722; overflow: auto; border: 1px solid #ffffff38; }
+  .windows-playback-settings :is(button,select) { min-height: 48px; color: inherit; background: #202938; border: 1px solid #ffffff38; font-size: 16px; }
+  .windows-playback-settings label { display: grid; gap: 8px; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   .player-backdrop {
     position: absolute;
@@ -271,6 +319,7 @@
   @media (max-width: 700px) {
     .player-backdrop { padding: 0; }
     .handoff-card { padding: 20px; }
+    .windows-playback-settings { inset: 0; width: 100%; }
   }
   @media (prefers-reduced-motion: reduce) {
     .player-backdrop, .player-backdrop * { animation: none !important; transition: none !important; }

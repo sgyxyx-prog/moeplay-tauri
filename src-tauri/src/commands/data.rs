@@ -63,6 +63,31 @@ pub fn import_database(
             }
         }
         current.settings = imported.settings;
+        for album in imported.handheld_catalog.albums {
+            if let Some(existing) = current
+                .handheld_catalog
+                .albums
+                .iter_mut()
+                .find(|entry| entry.id == album.id)
+            {
+                if album.updated_at > existing.updated_at {
+                    *existing = album;
+                }
+            } else {
+                current.handheld_catalog.albums.push(album);
+            }
+        }
+        for binding in imported.handheld_catalog.bindings {
+            if !current
+                .handheld_catalog
+                .bindings
+                .iter()
+                .any(|entry| entry.content_id == binding.content_id)
+            {
+                current.handheld_catalog.bindings.push(binding);
+            }
+        }
+        current.handheld_catalog.revision += 1;
         current.schema_version = migration::CURRENT_SCHEMA_VERSION;
         db.replace_data(current)
     } else {

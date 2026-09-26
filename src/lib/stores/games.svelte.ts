@@ -66,6 +66,7 @@ export const gameStore = {
   // ---- game actions ----
   launch(id: string) { return libraryStore.launch(id); },
   launchWithResult(id: string) { return libraryStore.launchWithResult(id); },
+  launchTracked(id: string) { return libraryStore.launchTracked(id); },
   launchJP(id: string) { return libraryStore.launchJP(id); },
   async toggleFavorite(id: string) { return libraryStore.toggleFavorite(id); },
   toggleFav(id: string) { return libraryStore.toggleFavorite(id); },

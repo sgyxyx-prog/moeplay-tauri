@@ -4,6 +4,7 @@
   import { cubicOut } from "svelte/easing";
   import { shortcut } from "@svelte-put/shortcut";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { LogicalSize } from "@tauri-apps/api/dpi";
   import { onBackButtonPress } from "@tauri-apps/api/app";
   import { invoke as tauriInvoke } from "@tauri-apps/api/core";
   import { gameStore } from "./lib/stores/games.svelte";
@@ -50,6 +51,7 @@
   import { paletteStore } from "./lib/features/palette/store.svelte";
   import HandheldKeyboardOverlay from "./lib/components/HandheldKeyboardOverlay.svelte";
   import HandheldRouteShell, { type HandheldRouteId } from "./lib/features/handheld/HandheldRouteShell.svelte";
+  import { displayProfile } from "./lib/features/windows-handheld/profile.svelte";
 
   const TOOLS_DRAWER_ID = "tools-drawer";
   const SHORTCUT_HELP_OVERLAY_ID = "shortcut-help";
@@ -60,7 +62,8 @@
   // 迷你置顶播放窗（#mini）：只渲染迷你播放器，跳过主壳与重型初始化
   const isMiniWindow = $state(typeof window !== "undefined" && window.location.hash.startsWith("#mini"));
   const isAndroid = $derived(platformStore.isAndroid);
-  const isBigPicture = $derived(uiStore.bigPictureActive && !isAndroid);
+  const isWindowsHandheld = $derived(displayProfile.enabled);
+  const isBigPicture = $derived(uiStore.bigPictureActive && !isAndroid && !isWindowsHandheld);
   const isMediaView = $derived(isAndroid && (uiStore.currentView === "anime" || uiStore.currentView === "comic" || uiStore.currentView === "novel"));
   // Android 所有非媒体路由都使用统一掌机外壳；媒体播放/阅读页由各自的沉浸式媒体壳接管。
   // 旧 handheld hash 仍走统一首页并在路由 effect 中归一化。
@@ -335,6 +338,10 @@
     }
     const result = handleBackNavigation();
     if (result !== "none") return true;
+    if (isWindowsHandheld && uiStore.currentView !== "home") {
+      navigateTo("home", { focus: "none" });
+      return true;
+    }
     if (isBigPicture) {
       uiStore.setBigPicture(false);
       return true;
@@ -343,7 +350,7 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
-    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || !document.hasFocus()) return;
     void layeredBack().then((handled) => {
       if (handled) event.preventDefault();
     });
@@ -374,6 +381,11 @@
   };
 
   const shortcutParameter = $derived(buildShortcutParameter(shortcutActions));
+
+  $effect(() => {
+    if (!platformStore.loaded || isAndroid || isMiniWindow) return;
+    void appWindow()?.setMinSize(new LogicalSize(isWindowsHandheld ? 640 : 900, isWindowsHandheld ? 400 : 600)).catch(() => {});
+  });
 
   $effect(() => {
     // Android has one canonical landing surface. The router may restore the
@@ -561,7 +573,7 @@
         back: () => { void escapeControllerSurface().then((escaped) => { if (!escaped) void layeredBack(); }); },
         start: () => {
           // Android 掌机无大屏模式：START 聚焦当前模块搜索框
-          if (isBigPicture) return;
+          if (isBigPicture || isWindowsHandheld) return;
           if (isAndroid) focusCurrentSearch();
           else uiStore.setBigPicture(true);
         },
@@ -741,6 +753,7 @@
 <div
   class="app-container"
   class:fullscreen={isBigPicture}
+  class:windows-handheld={isWindowsHandheld}
   class:mobile-shell={isAndroid}
   class:handheld-full={isAndroid && isHandheldView}
   class:media-full={isMediaView}
@@ -752,7 +765,13 @@
   data-workspace-focus={workspaceFocusEnabled ? "true" : undefined}
   data-workspace-focus-view={workspaceFocusEnabled ? (workspaceFocusStore.scopeFor(uiStore.currentView) ?? undefined) : undefined}
 >
-  {#if !isBigPicture}
+  {#if isWindowsHandheld}
+    {#await import("./lib/features/windows-handheld/HandheldShell.svelte") then { default: HandheldShell }}
+    <HandheldShell {taskActiveCount} {taskFailedCount}>
+      {@render appRouteContent()}
+    </HandheldShell>
+    {/await}
+  {:else if !isBigPicture}
     <WallpaperStage surface={wallpaperSurface} />
 
     {#if isAndroid}
@@ -901,6 +920,7 @@
     background: var(--c-black, #050505);
   }
   .app-container.fullscreen { display: block; background: #050914; }
+  .app-container.windows-handheld { display: block; }
   /* 番剧播放页沉浸模式：播放 20s 后隐藏顶部导航（class 由 uiStore.topNavHidden 驱动） */
   .app-container { transition: grid-template-rows 240ms ease; }
   .app-container.topnav-hidden { grid-template-rows: 0px minmax(0, 1fr); }

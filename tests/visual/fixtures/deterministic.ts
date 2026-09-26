@@ -38,8 +38,17 @@ export async function installDeterministicEnvironment(
       }
 
       let currentSettings = clone(state.settings);
+      const catalogFixtureKey = "moeplay-test-handheld-catalog";
+      let currentCatalog = clone(JSON.parse(localStorage.getItem(catalogFixtureKey) || "null") ?? (commandResults.handheld_catalog_get as object | undefined) ?? { schemaVersion: 1, revision: 0, albums: [], bindings: [] });
       const invoke = async (command: string, args?: Record<string, unknown>) => {
         invocations.push({ command, args: clone(args) });
+        if (command === "handheld_catalog_get") return clone(currentCatalog);
+        if (command === "handheld_catalog_save") {
+          const next = clone(args?.catalog as typeof currentCatalog);
+          currentCatalog = { ...next, revision: (next as { revision: number }).revision + 1 };
+          localStorage.setItem(catalogFixtureKey, JSON.stringify(currentCatalog));
+          return clone(currentCatalog);
+        }
         if (Object.prototype.hasOwnProperty.call(commandResults, command)) {
           return clone(commandResults[command]);
         }

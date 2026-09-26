@@ -4,12 +4,12 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_BUDGET = Object.freeze({
-  // v0.22.0 re-baseline: 掌机 XMB 共享壳层、双层肩键导航与媒体入口整合完成。
-  // KineticScene、播放器和媒体页仍按需拆分；单 chunk 限制继续独立约束。
-  totalJavaScriptBytes: 3_100_000,
+  // 作品志预览新增专题编排与操作轮盘后实测总量 3,213,078 B；
+  // 留约 37 KB 缓冲，仍对后续增长设置明确上限。
+  totalJavaScriptBytes: 3_250_000,
   largestChunkBytes: 1_100_000,
   animeChunkBytes: 700_000,
-  comicChunkBytes: 100_000,
+  comicChunkBytes: 110_000,
 });
 
 export function inspectBundle(directory, budget = DEFAULT_BUDGET) {

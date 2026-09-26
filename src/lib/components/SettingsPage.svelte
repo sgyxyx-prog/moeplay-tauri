@@ -32,6 +32,8 @@
   import { kineticStageStore } from "../features/kinetic";
   import { applyStartupWindowMode } from "../utils/startup-window-mode";
   import HandheldSettingsControlCenter from "./settings/HandheldSettingsControlCenter.svelte";
+  import { displayProfile } from "../features/windows-handheld/profile.svelte";
+  import { navigateTo } from "../stores/router.svelte";
 
   let showUpdateDialog = $state(false);
   const appVersion = APP_VERSION;
@@ -467,6 +469,12 @@
     await updateAppearance({ theme_pack, fixed_wallpaper_id: undefined });
     uiStore.notify("主题包已切换", "success");
   }
+
+  function switchWindowsHandheldMode() {
+    displayProfile.update({ mode: displayProfile.enabled ? "desktop" : "handheld" });
+    uiStore.setBigPicture(false);
+    navigateTo("home", { focus: "none" });
+  }
 </script>
 
 <PageShell as="div" width="full" scrollable={false} class="settings-v2-shell" labelledBy="settings-page-title" ariaLabel={i18n.t("settings.title")}>
@@ -574,6 +582,16 @@
                 <span class="mode-label">{mode.label}</span>
               </Card>
             {/each}
+          </div>
+
+          <div class="s-row windows-handheld-row">
+            <div class="s-info">
+              <span class="s-label">Windows 掌机体验 · 预览</span>
+              <span class="s-desc">16:10 多分辨率、手柄浏览与系统中文触摸输入。开启后会记住选择。</span>
+            </div>
+            <button class="s-link-btn windows-handheld-toggle" type="button" aria-pressed={displayProfile.enabled} onclick={switchWindowsHandheldMode}>
+              {displayProfile.enabled ? "切回原界面" : "开启新掌机模式"}
+            </button>
           </div>
 
           <div class="s-divider"></div>
@@ -884,6 +902,8 @@
 {/if}
 
 <style>
+  .windows-handheld-row { gap: 16px; flex-wrap: wrap; }
+  .windows-handheld-toggle { min-height: 44px; padding: 8px 16px; white-space: nowrap; }
   :global(.settings-v2-shell) { height: 100%; }
   :global(.settings-v2-shell .v2-page-shell__inner) { height: 100%; padding: 0; }
 

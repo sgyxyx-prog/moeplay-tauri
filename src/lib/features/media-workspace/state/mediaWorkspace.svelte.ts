@@ -81,6 +81,7 @@ export function createMediaWorkspaceState(initial: MediaWorkspaceInitialState = 
     games: normalizedMemory(initial.modules?.games),
     anime: normalizedMemory(initial.modules?.anime),
     comics: normalizedMemory(initial.modules?.comics),
+    novels: normalizedMemory(initial.modules?.novels),
   });
 
   function target(module?: ContentModule): ContentModule {
@@ -146,6 +147,7 @@ export function createMediaWorkspaceState(initial: MediaWorkspaceInitialState = 
           games: cloneMemory(modules.games),
           anime: cloneMemory(modules.anime),
           comics: cloneMemory(modules.comics),
+          novels: cloneMemory(modules.novels),
         },
       };
     },

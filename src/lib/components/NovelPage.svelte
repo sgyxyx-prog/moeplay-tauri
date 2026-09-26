@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import StorageNotice from "../features/reading-history/StorageNotice.svelte";
   import { downloadStart, openUrl } from "../api";
   import { novelStore } from "../features/novel/store.svelte";
@@ -11,7 +11,13 @@
   import Icon from "./Icon.svelte";
   import { PageShell, PageHeader, FilterBar, AsyncState } from "./ui-v2";
   import { platformStore } from "../platform/runtime.svelte";
-  import { navigateTo } from "../stores/router.svelte";
+  import { navigateTo, routerStore, closeTopOverlay } from "../stores/router.svelte";
+  import { displayProfile } from "../features/windows-handheld/profile.svelte";
+  import { mediaSurface } from "../features/windows-handheld/mediaSession";
+  import VirtualList from "../features/windows-handheld/VirtualList.svelte";
+  import { chapterStatus } from "../features/windows-handheld/chapterStatus";
+  import { readingRepository, type ReadingPosition } from "../features/reading-history/repository";
+  import { offlineApi, type OfflineChapter } from "../api/offline";
   import HandheldMediaShell from "../features/handheld/HandheldMediaShell.svelte";
   import type { NovelReadingMode } from "../features/handheld/mediaTypes";
 
@@ -20,6 +26,7 @@
   let searchInput = $state("");
   let readerElement = $state<HTMLElement | null>(null);
   let restoredReaderKey = $state("");
+  let readerRestoreRequest = 0;
   let fontSize = $state(19);
   let lineHeight = $state(1.9);
   let readerTheme = $state<"dark" | "paper" | "sepia">("dark");
@@ -31,6 +38,43 @@
   let offlineBusy = $state(false);
   let progressFrame = 0;
   let restoring = true;
+  let readerSettingsOpen = $state(false);
+  let readerChaptersOpen = $state(false);
+  let preferenceBook = "";
+  let chapterPositions = $state<ReadingPosition[]>(readingRepository.positions);
+  let offlineChapters = $state<OfflineChapter[]>([]);
+  onMount(() => readingRepository.subscribe(() => { chapterPositions = [...readingRepository.positions]; }));
+  $effect(() => {
+    if (!displayProfile.enabled || !readerChaptersOpen) return;
+    let active = true;
+    void offlineApi.list().then(rows => { if (active) offlineChapters = rows ?? []; }).catch(() => { if (active) offlineChapters = []; });
+    return () => { active = false; };
+  });
+  function chapterState(id: string) {
+    const book = novelStore.detail?.book;
+    const saved = chapterPositions.find(p => p.kind === "novel" && p.source === book?.source && p.contentId === book?.id && p.chapterId === id);
+    const offline = offlineChapters.find(p => p.contentType === "novel" && p.sourceId === book?.source && p.contentId === book?.id && p.chapterId === id);
+    return chapterStatus(saved, offline, novelStore.content?.chapter.id === id);
+  }
+
+  function applyReaderPrefs(key: string) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) ?? localStorage.getItem(READER_PREFS_KEY) ?? "{}");
+      fontSize = typeof saved.fontSize === "number" ? Math.max(15, Math.min(30, saved.fontSize)) : 19;
+      lineHeight = typeof saved.lineHeight === "number" ? Math.max(1.45, Math.min(2.5, saved.lineHeight)) : 1.9;
+      readerTheme = ["dark", "paper", "sepia"].includes(saved.theme) ? saved.theme : "dark";
+      readingMode = saved.readingMode === "paged" || saved.readingMode === "scroll" ? saved.readingMode : displayProfile.enabled ? "paged" : "scroll";
+    } catch { readingMode = displayProfile.enabled ? "paged" : "scroll"; }
+  }
+
+  $effect(() => {
+    const book = novelStore.detail?.book;
+    if (!displayProfile.enabled || !book) return;
+    const key = `${READER_PREFS_KEY}:${book.source}:${book.id}`;
+    if (preferenceBook === key) return;
+    preferenceBook = key;
+    untrack(() => applyReaderPrefs(key));
+  });
 
   const sourceOptions = $derived<Array<{ id: NovelSource; label: string; hint: string }>>([
     { id: "all", label: i18n.t("novel.source_all"), hint: i18n.t("novel.source_all_hint") },
@@ -54,21 +98,43 @@
     const book = novelStore.detail?.book;
     const content = novelStore.content;
     if (!element || !book || !content || !novelStore.historyReady) return;
-    const key = `${book.source}:${book.id}:${content.chapter.id}`;
+    // A persisted Windows reader preference can switch from the default
+    // continuous layout to columns after the reader first mounts. Treat that
+    // as a distinct layout restoration: a vertical first-frame restore must
+    // not consume the saved position needed by the final paged layout.
+    const mode = readingMode;
+    const key = `${book.source}:${book.id}:${content.chapter.id}:${mode}`;
     if (restoredReaderKey === key) return;
     restoredReaderKey = key;
     restoring = true;
+    const request = ++readerRestoreRequest;
     const saved = novelStore.progressFor(book, content.chapter.id);
     requestAnimationFrame(() => {
-      if (novelStore.content !== content || readerElement !== element) return;
-      if (readingMode === "paged") {
-        const available = Math.max(0, element.scrollWidth - element.clientWidth);
-        element.scrollLeft = available * saved;
-      } else {
-        const available = Math.max(0, element.scrollHeight - element.clientHeight);
-        element.scrollTop = available * saved;
-      }
-      requestAnimationFrame(() => { restoring = false; });
+      if (request !== readerRestoreRequest || novelStore.content !== content || readerElement !== element) return;
+      // Column layout can receive its final scroll width one frame after the
+      // reader is mounted. Wait for it before calculating the progress ratio.
+      requestAnimationFrame(() => {
+        if (request !== readerRestoreRequest || novelStore.content !== content || readerElement !== element) {
+          return;
+        }
+        // `scroll-behavior: smooth` also animates direct scrollLeft/scrollTop
+        // assignments. Restore synchronously so opening a chapter drawer cannot
+        // save a transient position while that animation is still in flight.
+        const priorScrollBehavior = element.style.scrollBehavior;
+        element.style.scrollBehavior = "auto";
+        try {
+          if (mode === "paged") {
+            const available = Math.max(0, element.scrollWidth - element.clientWidth);
+            element.scrollLeft = available * saved;
+          } else {
+            const available = Math.max(0, element.scrollHeight - element.clientHeight);
+            element.scrollTop = available * saved;
+          }
+        } finally {
+          element.style.scrollBehavior = priorScrollBehavior;
+        }
+        requestAnimationFrame(() => { if (request === readerRestoreRequest) restoring = false; });
+      });
     });
   });
 
@@ -86,13 +152,18 @@
       if (saved.readingMode === "paged" || saved.readingMode === "scroll") {
         readingMode = saved.readingMode;
       } else {
-        readingMode = platformStore.isAndroid ? "paged" : "scroll";
+        readingMode = platformStore.isAndroid || displayProfile.enabled ? "paged" : "scroll";
       }
     } catch {
       // Invalid local preferences should never prevent opening the reader.
-      readingMode = platformStore.isAndroid ? "paged" : "scroll";
+      readingMode = platformStore.isAndroid || displayProfile.enabled ? "paged" : "scroll";
     }
+    if (displayProfile.enabled && preferenceBook) applyReaderPrefs(preferenceBook);
     const handleKeydown = (event: KeyboardEvent) => {
+      if (displayProfile.enabled && novelStore.view === "reader" && routerStore.topOverlay?.id !== "windows-novel-reader") return;
+      if (displayProfile.enabled && novelStore.view === "reader" && event.key === "Escape") {
+        event.preventDefault(); event.stopImmediatePropagation(); closeTopOverlay(); return;
+      }
       if (novelStore.view === "reader" && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
         if (readingMode === "paged") {
           event.preventDefault();
@@ -140,7 +211,8 @@
 
   function persistReaderPrefs() {
     if (typeof localStorage === "undefined") return;
-    localStorage.setItem(READER_PREFS_KEY, JSON.stringify({ fontSize, lineHeight, theme: readerTheme, readingMode }));
+    localStorage.setItem(displayProfile.enabled && preferenceBook ? preferenceBook : READER_PREFS_KEY, JSON.stringify({ fontSize, lineHeight, theme: readerTheme, readingMode }));
+    if (displayProfile.enabled) restoredReaderKey = "";
   }
 
   async function submitSearch(event?: SubmitEvent) {
@@ -300,6 +372,8 @@
   }
 
   function closeNovelSurface() {
+    readerChaptersOpen = false;
+    readerSettingsOpen = false;
     if (novelStore.view === "reader") {
       saveReaderProgress();
       novelStore.showDetail();
@@ -332,9 +406,18 @@
     <div class="v2-grain nv-grain" aria-hidden="true"></div>
 
     {#if novelStore.view === "reader" && novelStore.detail && novelStore.content}
-      <div class="reader-shell theme-{readerTheme}">
+      <div class="reader-shell theme-{readerTheme}" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-novel-reader", onBack: closeNovelSurface, handlers: {
+        left: () => readingMode === "paged" ? moveReaderPage(-1) : moveReaderScroll(-1),
+        right: () => readingMode === "paged" ? moveReaderPage(1) : moveReaderScroll(1),
+        up: () => moveReaderScroll(-1), down: () => moveReaderScroll(1),
+        pageLeft: () => readingMode === "paged" ? moveReaderPage(-1) : moveReaderScroll(-1),
+        pageRight: () => readingMode === "paged" ? moveReaderPage(1) : moveReaderScroll(1),
+        launch: () => readingMode === "paged" ? moveReaderPage(1) : moveReaderScroll(1),
+        favorite: () => { saveReaderProgress(); readerChaptersOpen = !readerChaptersOpen; readerSettingsOpen = false; },
+        activate: () => { saveReaderProgress(); readerSettingsOpen = !readerSettingsOpen; readerChaptersOpen = false; },
+      } }}>
         <header class="reader-toolbar">
-          <button type="button" class="icon-button" data-gamepad-activate="返回目录" aria-label={i18n.t("novel.back_to_catalog")} onclick={() => { saveReaderProgress(); novelStore.showDetail(); }}>
+          <button type="button" class="icon-button" data-gamepad-activate="返回目录" aria-label={i18n.t("novel.back_to_catalog")} onclick={closeNovelSurface}>
             <Icon name="arrowLeft" size={19} />
           </button>
           <div class="reader-identity">
@@ -342,7 +425,15 @@
             <strong>{novelStore.detail.book.title}</strong>
             <span>{novelStore.content.chapter.title}</span>
           </div>
-          <div class="reader-controls" aria-label={i18n.t("novel.controls_aria")}>
+          {#if displayProfile.enabled}
+            <div class="windows-reader-actions">
+              <button type="button" onclick={() => { saveReaderProgress(); readerChaptersOpen = !readerChaptersOpen; readerSettingsOpen = false; }}>章节</button>
+              <button type="button" onclick={() => { saveReaderProgress(); readerSettingsOpen = !readerSettingsOpen; readerChaptersOpen = false; }}>阅读设置</button>
+            </div>
+          {/if}
+          {#if !displayProfile.enabled || readerSettingsOpen}
+          <div class="reader-controls" class:windows-reader-settings={displayProfile.enabled} aria-label={i18n.t("novel.controls_aria")} use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-novel-settings", menu: true, onBack: () => { readerSettingsOpen = false; } }}>
+            {#if displayProfile.enabled}<button type="button" onclick={() => { readerSettingsOpen = false; }}>关闭设置</button>{/if}
             <label class="reader-mode-control">
               <span class="sr-only">阅读模式</span>
               <select aria-label="阅读模式" value={readingMode} onchange={(event) => setReadingMode((event.currentTarget as HTMLSelectElement).value as NovelReadingMode)}>
@@ -370,7 +461,19 @@
               </select>
             </label>
           </div>
+          {/if}
         </header>
+
+        {#if displayProfile.enabled && readerChaptersOpen}
+          <aside class="windows-reader-chapters" aria-label="小说章节" use:mediaSurface={{ enabled: true, id: "windows-novel-chapters", menu: true, initialFocus: "[aria-current=true]", onBack: () => { readerChaptersOpen = false; } }}>
+            <button type="button" onclick={() => { readerChaptersOpen = false; }}>返回阅读</button>
+            <VirtualList items={novelStore.detail.chapters} itemKey={chapter => chapter.id} estimateSize={64} focusId={novelStore.content.chapter.id} overlayId="windows-novel-chapters" label="小说章节">
+              {#snippet children(chapter)}
+                <button type="button" aria-current={chapter.id === novelStore.content?.chapter.id ? "true" : undefined} onclick={() => { readerChaptersOpen = false; void readChapter(chapter); }}>{chapter.title}<small>{chapterState(chapter.id)}</small></button>
+              {/snippet}
+            </VirtualList>
+          </aside>
+        {/if}
 
         <div
           class="reader-scroll"
@@ -596,6 +699,14 @@
 {/if}
 
 <style>
+  .windows-reader-chapters small { display: block; margin-top: 4px; font-size: 12px; color: var(--reader-muted); }
+  @media (max-width: 700px) { .reader-controls.windows-reader-settings, .windows-reader-chapters { inset: 0 !important; width: 100% !important; } }
+  .windows-reader-actions { display: flex; gap: 8px; }
+  .windows-reader-actions button { min-height: 44px; border: 1px solid var(--reader-line); background: var(--reader-panel); color: inherit; padding: 8px 12px; }
+  .reader-controls.windows-reader-settings, .windows-reader-chapters { position: absolute; z-index: 20; inset: 64px 12px 12px auto; width: min(420px, 45vw); overflow-y: auto; display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 18px; background: var(--reader-panel); border: 1px solid var(--reader-line); box-shadow: -16px 0 40px #0008; }
+  .reader-controls.windows-reader-settings :is(button,select), .windows-reader-chapters button { min-height: 48px; font-size: 17px; }
+  .windows-reader-chapters button { width: 100%; flex-shrink: 0; text-align: left; padding: 10px; color: inherit; background: transparent; border: 1px solid var(--reader-line); }
+  .windows-reader-chapters button[aria-current=true] { border-color: var(--reader-accent); }
   :global(.novel-v2-shell) { height: 100%; }
   :global(.novel-v2-shell .v2-page-shell__inner) { height: 100%; padding: 0; }
 
@@ -730,7 +841,10 @@
   .reader-mode-control select { border-color: color-mix(in srgb, var(--reader-accent) 60%, var(--reader-line)); color: var(--reader-accent); font-weight: 700; }
   .reader-controls option { background: #181818; color: #eee; }
   .reader-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-behavior: smooth; }
-  .reader-scroll.paged { overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; }
+  /* Each CSS column is a reading page, but the article itself is the only
+     snap target. Mandatory snapping therefore reset restored positions to the
+     article start. Keep horizontal paging free to retain saved progress. */
+  .reader-scroll.paged { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
   .reader-article { width: min(100% - 36px, 820px); min-height: 100%; margin: 0 auto; padding: clamp(48px, 8vh, 100px) 0 max(80px, env(safe-area-inset-bottom)); }
   .reader-scroll.paged .reader-article { width: max-content; min-width: 100%; height: 100%; min-height: 0; margin: 0; padding: clamp(28px, 5vh, 64px) max(7vw, 44px) max(44px, env(safe-area-inset-bottom)); scroll-snap-align: start; }
   .reader-kicker { margin: 0 0 16px; color: var(--reader-accent); }

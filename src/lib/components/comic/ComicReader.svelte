@@ -23,6 +23,13 @@
   import { AsyncState } from "../ui-v2";
   import { attachGamepad } from "../switch/useGamepad.svelte";
   import { platformStore } from "../../platform/runtime.svelte";
+  import { displayProfile } from "../../features/windows-handheld/profile.svelte";
+  import { mediaSurface } from "../../features/windows-handheld/mediaSession";
+  import VirtualList from "../../features/windows-handheld/VirtualList.svelte";
+  import { chapterStatus } from "../../features/windows-handheld/chapterStatus";
+  import { readingRepository, type ReadingPosition } from "../../features/reading-history/repository";
+  import { offlineApi, type OfflineChapter } from "../../api/offline";
+  import { closeTopOverlay, routerStore } from "../../stores/router.svelte";
 
   let {
     onclose,
@@ -44,7 +51,7 @@
 
   const COMIC_READER_PREFS_KEY = "moeplay-comic-reader-prefs-v1";
 
-  function readReaderPrefs(key = COMIC_READER_PREFS_KEY): { direction: ComicReadingDirection; spread: ComicReaderSpread } | null {
+  function readReaderPrefs(key = COMIC_READER_PREFS_KEY): { direction: ComicReadingDirection; spread: ComicReaderSpread; fit?: "width" | "screen" } | null {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) return null;
@@ -52,7 +59,7 @@
       const directionish = parsed?.direction;
       const direction = directionish === "vertical" || directionish === "left-to-right" || directionish === "right-to-left" ? directionish : null;
       if (!direction) return null;
-      return { direction, spread: normalizeSpread(parsed?.spread) };
+      return { direction, spread: normalizeSpread(parsed?.spread), fit: parsed?.fit === "width" || parsed?.fit === "screen" ? parsed.fit : undefined };
     } catch {
       return null;
     }
@@ -62,8 +69,10 @@
   const savedReaderPrefs = readReaderPrefs(readerContentKey) ?? readReaderPrefs();
   let readerRoot = $state<HTMLElement>();
   let scrollRoot = $state<HTMLElement>();
-  let direction = $state<ComicReadingDirection>(savedReaderPrefs?.direction ?? (platformStore.isAndroid ? "right-to-left" : "vertical"));
+  let direction = $state<ComicReadingDirection>(savedReaderPrefs?.direction ?? (platformStore.isAndroid || displayProfile.enabled ? "right-to-left" : "vertical"));
   let spread = $state<ComicReaderSpread>(savedReaderPrefs?.spread ?? (platformStore.isAndroid ? "double" : "single"));
+  let imageFit = $state<"width" | "screen">(savedReaderPrefs?.fit ?? (displayProfile.enabled ? "width" : "screen"));
+  let settingsPanelOpen = $state(false);
   let zoom = $state(100);
   let toolbarVisible = $state(true);
   let currentPage = $state(0);
@@ -76,6 +85,21 @@
   let swipeStartX = $state(0);
   let swipeStartY = $state(0);
   let chapterPanelOpen = $state(false);
+  let chapterPositions = $state<ReadingPosition[]>(readingRepository.positions);
+  let offlineChapters = $state<OfflineChapter[]>([]);
+  onMount(() => readingRepository.subscribe(() => { chapterPositions = [...readingRepository.positions]; }));
+  $effect(() => {
+    if (!displayProfile.enabled || !chapterPanelOpen) return;
+    let active = true;
+    void offlineApi.list().then(rows => { if (active) offlineChapters = rows ?? []; }).catch(() => { if (active) offlineChapters = []; });
+    return () => { active = false; };
+  });
+  function chapterState(id: string, chapterOrder: number) {
+    const identity = comicStore.readerPosition;
+    const saved = chapterPositions.find(p => p.kind === "comic" && p.source === identity?.source && p.contentId === identity?.contentId && (p.chapterId === id || p.chapterId === String(chapterOrder)));
+    const offline = offlineChapters.find(p => p.contentType === "manga" && p.sourceId === comicStore.currentProvider && p.contentId === comicStore.currentComic?.id && p.chapterId === id);
+    return chapterStatus(chapterOrder === order && identity ? { ...identity, pageIndex: currentPage } : saved, offline, chapterOrder === order);
+  }
   let toolbarTimer: ReturnType<typeof setTimeout> | null = null;
   let pad: ReturnType<typeof attachGamepad> | null = null;
 
@@ -166,7 +190,7 @@
 
   function writeReaderPrefs() {
     try {
-      localStorage.setItem(readerContentKey, JSON.stringify({ direction, spread }));
+      localStorage.setItem(readerContentKey, JSON.stringify({ direction, spread, fit: imageFit }));
     } catch {
       // 隐私模式等场景忽略持久化失败
     }
@@ -184,11 +208,12 @@
     clearToolbarTimer();
     toolbarTimer = setTimeout(() => {
       toolbarTimer = null;
-      if (!chapterPanelOpen && !loading) toolbarVisible = false;
+      if (!chapterPanelOpen && !settingsPanelOpen && !loading) toolbarVisible = false;
     }, 3000);
   }
 
   function toggleChapterPanel() {
+    settingsPanelOpen = false;
     chapterPanelOpen = !chapterPanelOpen;
     if (chapterPanelOpen) revealToolbar();
   }
@@ -286,6 +311,7 @@
   }
 
   async function handleKeydown(event: KeyboardEvent) {
+    if (displayProfile.enabled && routerStore.topOverlay?.id !== "windows-comic-reader") return;
     if (isTypingTarget(event.target)) return;
     const command = getReaderKeyboardCommand(event, direction);
     if (!command) return;
@@ -345,7 +371,9 @@
 <div
   bind:this={readerRoot}
   class="reader-overlay"
+  class:windows-reader={displayProfile.enabled}
   class:toolbar-hidden={!toolbarVisible}
+  class:width-fit={displayProfile.enabled && imageFit === "width"}
   role="dialog"
   aria-modal="true"
   aria-labelledby="comic-reader-title"
@@ -357,8 +385,16 @@
     initialFocus: ".reader-close",
     returnFocus: false,
     closeOnEscape: true,
-    onEscape: () => void closeReader(),
+    onEscape: () => { if (displayProfile.enabled) closeTopOverlay(); else void closeReader(); },
   }}
+  use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-comic-reader", onBack: () => void closeReader(), handlers: {
+    left: () => movePage(direction === "right-to-left" ? 1 : -1), right: () => movePage(direction === "right-to-left" ? -1 : 1),
+    up: () => scrollRoot?.scrollBy({ top: -240, behavior: "smooth" }), down: () => scrollRoot?.scrollBy({ top: 240, behavior: "smooth" }),
+    pageLeft: () => movePage(-1), pageRight: () => movePage(1), launch: () => movePage(1),
+    favorite: toggleChapterPanel,
+    activate: () => { chapterPanelOpen = false; settingsPanelOpen = !settingsPanelOpen; revealToolbar(); },
+    start: revealToolbar,
+  } }}
   onkeydown={handleKeydown}
   onpointermove={revealToolbar}
   onpointerdown={revealToolbar}
@@ -376,6 +412,10 @@
       </div>
 
       <div class="reader-tools" aria-label="阅读显示设置">
+        {#if displayProfile.enabled}
+          <Button variant="quiet" size="sm" press={toggleChapterPanel}>章节</Button>
+          <Button variant="quiet" size="sm" press={() => { chapterPanelOpen = false; settingsPanelOpen = !settingsPanelOpen; }}>阅读设置</Button>
+        {:else}
         <Button variant="quiet" size="sm" press={cycleDirection} title="按 D 切换阅读方向" ariaLabel={`阅读方向：${directionLabel}`} gamepadActivate="切换阅读方向">
           <Icon name="layers" size={14} />{directionLabel}
         </Button>
@@ -385,6 +425,7 @@
         <Button variant="quiet" size="sm" press={() => changeZoom(-READER_ZOOM_STEP)} disabled={zoom <= 60} ariaLabel="缩小漫画" gamepadActivate="缩小">−</Button>
         <output class="zoom-output" aria-label="当前缩放">{zoom}%</output>
         <Button variant="quiet" size="sm" press={() => changeZoom(READER_ZOOM_STEP)} disabled={zoom >= 200} ariaLabel="放大漫画" gamepadActivate="放大">＋</Button>
+        {/if}
         <Button variant="quiet" size="sm" press={() => (toolbarVisible = false)} ariaLabel="隐藏阅读工具栏" title="按 T 恢复工具栏" gamepadActivate="隐藏控件">
           <Icon name="chevronDown" size={14} />
         </Button>
@@ -397,12 +438,22 @@
   {/if}
 
   {#if chapterPanelOpen}
-    <aside class="chapter-panel" aria-label="章节列表">
+    <aside class="chapter-panel" aria-label="章节列表" use:mediaSurface={{ enabled: displayProfile.enabled, id: "windows-comic-chapters", menu: true, initialFocus: ".current", onBack: () => { chapterPanelOpen = false; } }}>
       <div class="chapter-panel-head">
         <strong>章节</strong>
         <button type="button" aria-label="关闭章节列表" onclick={() => (chapterPanelOpen = false)}><Icon name="x" size={16} /></button>
       </div>
       <div class="chapter-panel-list">
+        {#if displayProfile.enabled}
+          <VirtualList items={chapters} itemKey={chapter => String(chapter.order)} estimateSize={64} focusId={String(order)} overlayId="windows-comic-chapters" label="漫画章节">
+            {#snippet children(chapter)}
+              <button type="button" class:current={chapter.order === order} disabled={loading}
+                onclick={async () => { savePosition(); chapterPanelOpen = false; await comicStore.openChapter(chapter.order, chapter.title); }}>
+                <span>{chapter.order}</span><strong>{chapter.title || `第 ${chapter.order} 话`}<small>{chapterState(chapter.id, chapter.order)}</small></strong>
+              </button>
+            {/snippet}
+          </VirtualList>
+        {:else}
         {#each chapters as chapter (chapter.order)}
           <button
             type="button"
@@ -413,6 +464,20 @@
             <span>{chapter.order}</span><strong>{chapter.title || `第 ${chapter.order} 话`}</strong>
           </button>
         {/each}
+        {/if}
+      </div>
+    </aside>
+  {/if}
+
+  {#if displayProfile.enabled && settingsPanelOpen}
+    <aside class="chapter-panel reader-settings-panel" aria-label="阅读设置" use:mediaSurface={{ enabled: true, id: "windows-comic-settings", menu: true, onBack: () => { settingsPanelOpen = false; } }}>
+      <div class="chapter-panel-head"><strong>阅读设置</strong><button type="button" onclick={() => { settingsPanelOpen = false; }} aria-label="关闭阅读设置">×</button></div>
+      <div class="chapter-panel-list">
+        <button type="button" onclick={() => { imageFit = imageFit === "width" ? "screen" : "width"; writeReaderPrefs(); }}>图片适配：{imageFit === "width" ? "适合宽度" : "适合整页"}</button>
+        <button type="button" onclick={cycleDirection}>阅读方向：{directionLabel}</button>
+        <button type="button" disabled={direction === "vertical"} onclick={toggleSpread}>页面模式：{spreadLabel}</button>
+        <button type="button" disabled={zoom <= 60} onclick={() => changeZoom(-READER_ZOOM_STEP)}>缩小 · {zoom}%</button>
+        <button type="button" disabled={zoom >= 200} onclick={() => changeZoom(READER_ZOOM_STEP)}>放大 · {zoom}%</button>
       </div>
     </aside>
   {/if}
@@ -527,6 +592,14 @@
 </div>
 
 <style>
+  .windows-reader .chapter-panel-list button { min-height: 52px; }
+  .windows-reader .chapter-panel-list button strong { font-size: 16px; }
+  .chapter-panel-list small { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--text-muted); }
+  @media (max-width: 700px) { .windows-reader .chapter-panel { inset: 0; width: 100%; min-width: 0; } }
+  .width-fit .single-page .img-wrap { align-self: start; min-height: 0; }
+  .width-fit .single-page:not(.spread) .img-wrap img { width: calc(100% * var(--reader-zoom)); max-height: none; height: auto; }
+  .width-fit .reader-scroll.single-page-mode { overflow-y: auto; }
+  .reader-settings-panel .chapter-panel-list button { display: block; min-height: 48px; font-size: 16px; }
   .reader-overlay {
     position: absolute;
     inset: 0;
@@ -571,7 +644,7 @@
   }
   .chapter-panel-head { display: flex; align-items: center; justify-content: space-between; min-height: 3.25rem; padding: 0 .9rem; border-bottom: 1px solid rgba(255,255,255,.1); color: #fff; }
   .chapter-panel-head button { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border: 0; background: transparent; color: #fff; cursor: pointer; }
-  .chapter-panel-list { min-height: 0; overflow: auto; padding: .45rem; }
+  .chapter-panel-list { min-height: 0; flex: 1; overflow: auto; padding: .45rem; }
   .chapter-panel-list button { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); align-items: center; gap: .45rem; width: 100%; min-height: 2.75rem; padding: .35rem .55rem; border: 1px solid transparent; background: transparent; color: var(--v2-color-text-secondary, #b8bdc9); text-align: left; cursor: pointer; }
   .chapter-panel-list button:hover, .chapter-panel-list button:focus-visible { border-color: var(--v2-color-accent, #e8557f); color: #fff; outline: none; }
   .chapter-panel-list button.current { border-color: color-mix(in srgb, var(--v2-color-accent, #e8557f) 60%, transparent); background: color-mix(in srgb, var(--v2-color-accent, #e8557f) 14%, transparent); color: #fff; }

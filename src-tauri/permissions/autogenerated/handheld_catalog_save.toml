@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-handheld-catalog-save"
+description = "Enables the handheld_catalog_save command without any pre-configured scope."
+commands.allow = ["handheld_catalog_save"]
+
+[[permission]]
+identifier = "deny-handheld-catalog-save"
+description = "Denies the handheld_catalog_save command without any pre-configured scope."
+commands.deny = ["handheld_catalog_save"]

@@ -32,6 +32,7 @@ if (!(Test-Path -LiteralPath (Join-Path $RulesSource 'manifest.json'))) { throw 
 $ResourcesDestination = Join-Path $StageDir 'resources'
 New-Item -ItemType Directory -Path $ResourcesDestination -Force | Out-Null
 Copy-Item -LiteralPath $RulesSource -Destination $ResourcesDestination -Recurse
+Copy-Item -LiteralPath (Join-Path $Root 'src-tauri/resources/HANDHELD_THIRD_PARTY_NOTICES.txt') -Destination $ResourcesDestination
 
 $Readme = @"
 MoePlay portable package
