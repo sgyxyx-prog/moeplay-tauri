@@ -1,0 +1,11 @@
+MoePlay v0.24.5 original character wallpaper set
+
+The three v245 WebP wallpapers were generated for MoePlay from the existing
+MoePlay anime mascot as a character reference. They are bundled project art,
+not images or theme source copied from a third-party GitHub repository.
+
+Visual research: Animeko (open-ani/animeko) informed content-first composition;
+Kazumi (Predidit/Kazumi) informed readable cover/progress hierarchy. Their
+source code and artwork are not included in this theme pack.
+
+Original PNG masters are retained in the local Codex generated_images directory.

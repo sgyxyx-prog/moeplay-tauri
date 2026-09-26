@@ -2,39 +2,39 @@
    全套换肤：c-*（scheme-c 消费面）+ 语义色 + 控件签名。
    选择器 html[data-theme-pack] 与 scheme-c 同特异性，靠 main.ts 末位导入取胜。 */
 html[data-theme-pack="borderless-lumen"] {
-  /* ── 无界光场调色板（scheme-c c-* 面） ── */
-  --c-black: #080b0d;
-  --c-void: #0b1013;
-  --c-surface-1: #10171b;
-  --c-surface-2: #151e23;
-  --c-surface-3: #1b272d;
+  /* ── 夜色与紫藤调色板（scheme-c c-* 面） ── */
+  --c-black: #10121e;
+  --c-void: #171a2a;
+  --c-surface-1: #1d2133;
+  --c-surface-2: #252a3e;
+  --c-surface-3: #303650;
   --c-paper: #f5f2e9;
-  --c-muted: #a7b3b3;
-  --c-dim: #788b8e;
+  --c-muted: #b7bdd0;
+  --c-dim: #929bb5;
   --c-line: rgba(245, 242, 233, .13);
   --c-line-strong: rgba(245, 242, 233, .34);
-  --c-accent: #63e4d4;
-  --c-accent-hi: #a3f2e6;
+  --c-accent: #c5b0ff;
+  --c-accent-hi: #e3d5ff;
 
   /* ── 语义色 ── */
-  --accent: #63e4d4;
-  --accent-hi: #a3f2e6;
-  --accent-lo: rgba(99, 228, 212, .18);
-  --accent-ring: rgba(99, 228, 212, .55);
-  --bg-void: #080b0d;
-  --bg-deep: #0b1013;
-  --bg: #10171b;
-  --bg-base: #10171b;
-  --bg-surface: #121b20;
-  --bg-secondary: #151e23;
-  --bg-elev: #172329;
-  --bg-card: #1a282e;
-  --bg-hover: #213039;
-  --bg-active: rgba(99, 228, 212, .16);
+  --accent: #c5b0ff;
+  --accent-hi: #e3d5ff;
+  --accent-lo: rgba(197, 176, 255, .18);
+  --accent-ring: rgba(197, 176, 255, .55);
+  --bg-void: #10121e;
+  --bg-deep: #171a2a;
+  --bg: #1d2133;
+  --bg-base: #1d2133;
+  --bg-surface: #22263a;
+  --bg-secondary: #252a3e;
+  --bg-elev: #2c3148;
+  --bg-card: #303650;
+  --bg-hover: #39415c;
+  --bg-active: rgba(197, 176, 255, .16);
   --text-primary: #f5f2e9;
-  --text-secondary: #c6d0ce;
-  --text-muted: #a7b3b3;
-  --text-dim: #788b8e;
+  --text-secondary: #d7d8e8;
+  --text-muted: #b7bdd0;
+  --text-dim: #929bb5;
   --border: rgba(245, 242, 233, .12);
   --border-hover: rgba(245, 242, 233, .30);
   --border-glass: rgba(245, 242, 233, .10);
@@ -44,21 +44,21 @@ html[data-theme-pack="borderless-lumen"] {
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
-  --focus-ring: 0 0 0 2px #080b0d, 0 0 0 4px rgba(99, 228, 212, .60);
-  --glass-bg: rgba(4, 4, 8, .92);
+  --focus-ring: 0 0 0 2px #10121e, 0 0 0 4px rgba(197, 176, 255, .75);
+  --glass-bg: rgba(20, 22, 38, .90);
   --glass-border: rgba(245, 242, 233, .13);
   --glass-highlight: none;
   --shadow-card: 0 2px 16px rgba(2, 2, 6, .6);
   --shadow-hover: 0 8px 28px rgba(2, 2, 6, .7);
 
   /* ── 壁纸舞台 ── */
-  --mascot-accent: #56e0d4;
-  --theme-ambient: rgba(99, 228, 212, .22);
+  --mascot-accent: #d3bcff;
+  --theme-ambient: rgba(197, 176, 255, .18);
   --wallpaper-scrim:
-    linear-gradient(90deg, rgba(4,4,8,.88) 0%, rgba(4,4,8,.58) 47%, rgba(4,4,8,.22) 100%),
-    linear-gradient(0deg, rgba(4,4,8,.82), transparent 50%);
-  --wallpaper-brightness: .80;
-  --wallpaper-saturation: 1.10;
+    linear-gradient(90deg, rgba(16,18,30,.86) 0%, rgba(16,18,30,.58) 37%, rgba(16,18,30,.08) 78%),
+    linear-gradient(0deg, rgba(16,18,30,.70), transparent 48%);
+  --wallpaper-brightness: .96;
+  --wallpaper-saturation: 1.04;
 }
 
 /* ── 控件签名：有机流光（全圆角 pill + 柔光） ── */
@@ -70,7 +70,7 @@ html[data-theme-pack="borderless-lumen"] .ui-button {
 html[data-theme-pack="borderless-lumen"] .ui-button--primary {
   background: var(--accent);
   border-color: transparent;
-  color: #081310;
+  color: #1d1733;
 }
 html[data-theme-pack="borderless-lumen"] .ui-button--primary:hover:not(:disabled) {
   filter: brightness(1.12);

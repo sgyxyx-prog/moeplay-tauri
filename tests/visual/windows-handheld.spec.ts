@@ -114,9 +114,19 @@ test.describe("Windows handheld artwork states", () => {
     await expect(page.locator(".stage-art:not(.wide)")).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("home-portrait-art.png") });
     await page.getByRole("button", { name: /加载失败后依然清楚可读/ }).first().click();
-    await expect(page.locator(".stage-pattern")).toBeVisible();
+    await expect(page.locator(".stage-art.character")).toBeVisible();
+    await expect.poll(() => page.locator(".stage-art.character").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    await page.locator(".stage-art.character").evaluate((img: HTMLImageElement) => img.decode());
+    await expect(page.locator(".stage-copy .progress-label")).toBeVisible();
+    const titleBox = await page.locator(".stage-copy h1").boundingBox();
+    const progressBox = await page.locator(".stage-copy .progress-label").boundingBox();
+    expect(titleBox && progressBox && titleBox.y + titleBox.height <= progressBox.y + 1).toBe(true);
     await expect(page.locator(".stage-copy h1")).toContainText("加载失败后依然清楚可读");
     await page.screenshot({ path: testInfo.outputPath("home-failed-art.png") });
+    await page.setViewportSize({ width: 640, height: 400 });
+    await expect(page.locator(".stage-actions .primary")).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath("home-640.png") });
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.getByRole("button", { name: "藏馆", exact: true }).click();
     await page.screenshot({ path: testInfo.outputPath("gallery-art-states.png") });
     expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
@@ -233,8 +243,14 @@ for (const [width, height] of [[1280,800],[1920,1200],[2560,1600]]) {
       test("keeps actions visible and opt-in mode stable", async ({ appPage: page }, testInfo) => {
         const shell = page.getByTestId("windows-handheld-shell");
         await expect(shell).toBeVisible();
-        if ((width === 1280 && dpi === 1) || (width === 1920 && dpi === 1.5) || (width === 2560 && dpi === 2))
+        if ((width === 1280 && (dpi === 1 || dpi === 2)) || (width === 1920 && dpi === 1.5) || (width === 2560 && dpi === 2)) {
+          const art = page.locator(".stage-art.character");
+          if (await art.count()) {
+            await art.evaluate((img: HTMLImageElement) => img.decode());
+            await art.screenshot();
+          }
           await page.screenshot({ path: testInfo.outputPath(`home-${width}x${height}-${dpi}.png`) });
+        }
         await expect(page.getByRole("button", { name: "快捷面板", exact:true })).toBeInViewport();
         await expect(page.getByRole("button", { name: "藏馆", exact:true })).toBeInViewport();
         expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);

@@ -15,9 +15,9 @@ describe("borderless-lumen theme pack contract", () => {
 
 	it("ships the calibrated token block", () => {
 		expect(tokenSource).toContain('[data-theme-pack="borderless-lumen"]');
-		expect(tokenSource).toContain("--accent: #63e4d4");
-		expect(tokenSource).toContain("--mascot-accent: #56e0d4");
-		expect(tokenSource).toContain("--theme-ambient: rgba(99, 228, 212, .22)");
+		expect(tokenSource).toContain("--accent: #c5b0ff");
+		expect(tokenSource).toContain("--mascot-accent: #d3bcff");
+		expect(tokenSource).toContain("--theme-ambient: rgba(197, 176, 255, .18)");
 	});
 
 	it("ships the final theme-art composition module", () => {
@@ -49,5 +49,17 @@ describe("borderless-lumen theme pack contract", () => {
 
 	it("uses a supported decoration", () => {
 		expect(["petals", "light-particles", "digital-rain"]).toContain(getThemePack("borderless-lumen").decoration);
+	});
+
+	it("loads original character wallpapers in the stable default pack", () => {
+		const pack = getThemePack("borderless-lumen");
+		expect(pack.wallpapers).toHaveLength(3);
+		expect(pack.wallpapers.map(wallpaper => wallpaper.id)).toEqual([
+			"builtin:borderless-lumen:1", "builtin:borderless-lumen:2", "builtin:borderless-lumen:3",
+		]);
+		for (const wallpaper of pack.wallpapers) {
+			expect(wallpaper.src).toContain("v245.webp");
+			expect(wallpaper.rating).toBe("general");
+		}
 	});
 });

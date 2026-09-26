@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAcceptanceReport, probeDownloadEndpoint, readReleaseIdentity, validateReleaseIdentity } from "./acceptance-release.mjs";
 
-test("release identity is synchronized at v0.24.0", () => {
+test("release identity is synchronized at v0.24.5", () => {
   const identity = readReleaseIdentity();
-  assert.equal(identity.version, "0.24.0");
-  assert.deepEqual(Object.values(identity.files), ["0.24.0", "0.24.0", "0.24.0", "0.24.0", "0.24.0", "0.24.0"]);
-  assert.doesNotThrow(() => validateReleaseIdentity("0.24.0", identity));
+  assert.equal(identity.version, "0.24.5");
+  assert.deepEqual(Object.values(identity.files), ["0.24.5", "0.24.5", "0.24.5", "0.24.5", "0.24.5", "0.24.5"]);
+  assert.doesNotThrow(() => validateReleaseIdentity("0.24.5", identity));
   assert.throws(() => validateReleaseIdentity("0.23.1", identity), /mismatch|Invalid/);
 });
 
