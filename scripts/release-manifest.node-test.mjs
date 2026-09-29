@@ -34,7 +34,7 @@ test("rejects tampered assets, absent channels and mismatched updater versions",
   assert.throws(() => verifyManifest(directory), /Mismatch/);
   fs.writeFileSync(asset, original);
   fs.writeFileSync(path.join(directory, "release-manifest.json"), JSON.stringify({ ...manifest, assets: manifest.assets.filter(a => a.channel !== "compat") }));
-  assert.throws(() => verifyManifest(directory), /Missing compat/);
+  assert.throws(() => verifyManifest(directory), /Android release and compat/);
   fs.writeFileSync(path.join(directory, "release-manifest.json"), JSON.stringify(manifest));
   fs.writeFileSync(path.join(directory, "latest.json"), JSON.stringify({ version: version + "0" }));
   assert.throws(() => verifyManifest(directory), /Missing signed/);
@@ -65,4 +65,15 @@ test("generation can bind a frozen source commit explicitly", t => {
   const { directory } = fixture(t);
   const manifest = generateManifest(directory, { commit: "d".repeat(40) });
   assert.equal(manifest.commit, "d".repeat(40));
+});
+
+test("Windows-only patch keeps the complete Windows channels without claiming Android", t => {
+  const { directory, version } = fixture(t);
+  for (const channel of ["release", "compat"]) fs.rmSync(path.join(directory, `MoeGame_${version}_arm64-${channel}.apk`));
+  const manifest = generateManifest(directory, { commit: "e".repeat(40) });
+  assert.deepEqual(manifest.assets.map(asset => asset.channel).sort(), ["installer", "msi", "portable"]);
+  assert.equal(manifest.androidCompatibilityVerified, false);
+  assert.deepEqual(verifyManifest(directory), manifest);
+  fs.writeFileSync(path.join(directory, `MoeGame_${version}_arm64-release.apk`), "release");
+  assert.throws(() => generateManifest(directory, { commit: "e".repeat(40) }), /Android release and compat/);
 });

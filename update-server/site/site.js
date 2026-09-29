@@ -3,6 +3,23 @@ const el = id => document.getElementById(id);
 const size = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 const labels = { installer: "Windows · EXE 安装版", msi: "Windows · MSI", portable: "Windows · Portable ZIP", release: "Android · 正式 Release", compat: "Android · 旧签名兼容包" };
 const assetUrl = (version, file) => `/downloads/${encodeURIComponent(version)}/${encodeURIComponent(file)}`;
+async function previousAndroidRelease(currentVersion) {
+  const response = await fetch("/versions.json", { cache: "no-store" });
+  if (!response.ok) return null;
+  const versions = await response.json();
+  if (!Array.isArray(versions)) return null;
+  const number = version => version.split(".").reduce((value, part) => value * 1000 + Number(part), 0);
+  const candidates = versions.filter(version => /^\d+\.\d+\.\d+$/.test(version) && number(version) < number(currentVersion))
+    .sort((left, right) => number(right) - number(left));
+  for (const version of candidates) {
+    const archive = await fetch(`/versions/${version}/release-manifest.json`, { cache: "no-store" });
+    if (!archive.ok) continue;
+    const manifest = await archive.json();
+    const asset = manifest.assets?.find(item => item.platform === "android" && item.channel === "release" && typeof item.file === "string" && !/[\\/]/.test(item.file));
+    if (asset) return { version, asset };
+  }
+  return null;
+}
 function hasBoundAndroidCoverage(release, assets, channel) {
   const evidence = release.androidVerification?.[channel] ?? release.androidUpgradeReports?.[channel] ?? release.androidReports?.[channel];
   const report = evidence?.report ?? evidence;
@@ -34,6 +51,15 @@ async function loadRelease() {
       const asset = assets.find(a => a.channel === channel); if (!asset) continue;
       el(id).href = assetUrl(release.version, asset.file);
       el(id).querySelector("small").textContent = `v${release.version} · ${size(asset.size)} · ${asset.architecture.toUpperCase()}`;
+    }
+    if (!assets.some(asset => asset.platform === "android" && asset.channel === "release")) {
+      try {
+        const previous = await previousAndroidRelease(release.version);
+        if (previous) {
+          el("android-download").href = assetUrl(previous.version, previous.asset.file);
+          el("android-download").querySelector("small").textContent = `v${previous.version} · Android 上一版`;
+        }
+      } catch { /* Keep the GitHub release list as the fallback. */ }
     }
     for (const note of release.notes ?? []) { const li = document.createElement("li"); li.textContent = note; el("release-notes").append(li); }
     for (const asset of assets) {

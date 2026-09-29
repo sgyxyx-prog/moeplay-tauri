@@ -185,9 +185,9 @@ for asset in manifest["assets"]:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     if file.stat().st_size != asset["size"] or digest != asset["sha256"]:
         raise SystemExit(f"Hash mismatch: {name}")
-required_channels = {"installer", "msi", "portable", "release", "compat"}
-channels = {asset.get("channel") for asset in manifest["assets"]}
-if not required_channels.issubset(channels):
+windows_channels = {asset.get("channel") for asset in manifest["assets"] if asset.get("platform") == "windows"}
+android_channels = {asset.get("channel") for asset in manifest["assets"] if asset.get("platform") == "android"}
+if not {"installer", "msi", "portable"}.issubset(windows_channels) or (android_channels and not {"release", "compat"}.issubset(android_channels)):
     raise SystemExit("Missing release channel")
 site = root / "sites" / version
 download = root / "downloads" / version
