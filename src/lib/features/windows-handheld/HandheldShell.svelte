@@ -68,6 +68,9 @@
     if (snapshot.query) items = items.filter(item => item.title.toLocaleLowerCase().includes(snapshot.query.toLocaleLowerCase()));
     return [...items].sort(snapshot.sort === "title" ? (a, b) => a.title.localeCompare(b.title, "zh-CN") : (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   });
+  const visibleColumns = $derived(rows.length === 1 ? 1 : Math.min(galleryColumns, rows.length));
+  const visibleRowHeight = $derived(rows.length <= 4 ? Math.max(250, Math.min(650, Math.round(size.height * .58)))
+    : galleryRowHeight);
   const selected = $derived(rows.find(item => item.id === snapshot.selectedId) ?? rows[0] ?? null);
   const featured = $derived(panelItem ? handheldContentStore.library.find(item => item.id === panelItem?.id) ?? panelItem : tab === "library" && snapshot.libraryView === "albums" ? albumFocusedItem : selected);
   const accentSource = $derived(tab === "library" && snapshot.libraryView === "albums" && snapshot.albumId
@@ -246,13 +249,13 @@
     {:else if tab === "mine"}
       <div class="section-heading"><div><h1>我的</h1></div><span>内容与偏好都留在这里</span></div>
       <div class="tools">
-        <button onclick={() => { switchTab("library"); handheldSession.patch({ filter: "all", kind: "all" }); }}>完整历史与内容库 <small>按最近使用排序</small></button>
-        <button onclick={() => { switchTab("library"); handheldSession.patch({ filter: "favorites", kind: "all" }); }}>收藏 <small>已收藏的游戏与媒体</small></button>
-        <button onclick={() => void gameStore.importGame()}>导入本地游戏 <small>选择本机可执行文件</small></button>
-        {#each [{view:"steam-import",label:"平台导入",sub:"Steam 游戏库"},{view:"tasks",label:"任务",sub:`${taskActiveCount} 项进行中 · ${taskFailedCount} 项失败`},{view:"sources",label:"来源",sub:"搜索、解析与可用状态"},{view:"downloads",label:"离线与下载",sub:"本机下载任务"},{view:"backup",label:"游戏存档备份",sub:"现有存档备份与恢复"},{view:"settings",label:"设置与同步",sub:"WebDAV、显示与手柄"}] as tool}<button onclick={() => navigateTo(tool.view)}>{tool.label}<small>{tool.sub}</small></button>{/each}
+        <button class="tool-tile" onclick={() => { switchTab("library"); handheldSession.patch({ filter: "all", kind: "all" }); }}><span class="tool-icon"><Icon name="clock" size={26} /></span><span class="tool-copy"><strong>完整历史与内容库</strong><small>按最近使用排序</small></span><Icon name="arrowRight" size={18} /></button>
+        <button class="tool-tile" onclick={() => { switchTab("library"); handheldSession.patch({ filter: "favorites", kind: "all" }); }}><span class="tool-icon"><Icon name="heart" size={26} /></span><span class="tool-copy"><strong>收藏</strong><small>已收藏的游戏与媒体</small></span><Icon name="arrowRight" size={18} /></button>
+        <button class="tool-tile" onclick={() => void gameStore.importGame()}><span class="tool-icon"><Icon name="plus" size={26} /></span><span class="tool-copy"><strong>导入本地游戏</strong><small>选择本机可执行文件</small></span><Icon name="arrowRight" size={18} /></button>
+        {#each [{view:"steam-import",label:"平台导入",sub:"Steam 游戏库",icon:"steam"},{view:"tasks",label:"任务",sub:`${taskActiveCount} 项进行中 · ${taskFailedCount} 项失败`,icon:"download"},{view:"sources",label:"来源",sub:"搜索、解析与可用状态",icon:"layers"},{view:"downloads",label:"离线与下载",sub:"本机下载任务",icon:"folder"},{view:"backup",label:"游戏存档备份",sub:"现有存档备份与恢复",icon:"save"},{view:"settings",label:"设置与同步",sub:"WebDAV、显示与手柄",icon:"settings"}] as tool}<button class="tool-tile" onclick={() => navigateTo(tool.view)}><span class="tool-icon"><Icon name={tool.icon} size={26} /></span><span class="tool-copy"><strong>{tool.label}</strong><small>{tool.sub}</small></span><Icon name="arrowRight" size={18} /></button>{/each}
       </div>
     {:else if tab === "continue"}
-      <EditorialContinue items={rows} {selected} recentOffset={snapshot.recentScrollOffset} onrecentScroll={offset => handheldSession.patch({ recentScrollOffset: offset })} onselect={select} onopen={item => void handheldContentStore.activate(item)} onmore={() => showPanel("wheel")} onalbum={openAlbum} onlibrary={() => switchTab("library")} onsearch={() => showPanel("search")} onimport={() => void gameStore.importGame()} />
+      <EditorialContinue items={rows} {selected} availableWidth={size.width} recentOffset={snapshot.recentScrollOffset} onrecentScroll={offset => handheldSession.patch({ recentScrollOffset: offset })} onselect={select} onopen={item => void handheldContentStore.activate(item)} onmore={() => showPanel("wheel")} onalbum={openAlbum} onlibrary={() => switchTab("library")} onsearch={() => showPanel("search")} onimport={() => void gameStore.importGame()} />
     {:else if tab === "library" && snapshot.libraryView === "albums"}
       {#if !snapshot.albumId}<div class="library-switch"><button onclick={() => handheldSession.patch({ libraryView: "all" })}>全部作品</button><button class="active">我的专题</button></div>{/if}
       <AlbumView items={handheldContentStore.library} activeAlbumId={snapshot.albumId} activeMemberId={snapshot.albumMemberId} compact={size.height < 560} onalbum={id => { albumFocusedItem = null; handheldSession.patch({ albumId: id, albumMemberId: null }); }} onmember={id => handheldSession.patch({ albumMemberId: id })} onselect={item => { albumFocusedItem = item; if (item) select(item); }} onopen={item => void handheldContentStore.activate(item)} onsearch={searchFor} />
@@ -264,10 +267,10 @@
         {#if tab !== "discover"}<label><span class="sr-only">筛选</span><select aria-label="内容筛选" value={snapshot.filter} onchange={e => handheldSession.patch({ filter: e.currentTarget.value as typeof snapshot.filter })}><option value="all">所有内容</option><option value="favorites">收藏</option><option value="local">本机可用</option></select></label><label><span class="sr-only">排序</span><select aria-label="内容排序" value={snapshot.sort} onchange={e => handheldSession.patch({ sort: e.currentTarget.value as typeof snapshot.sort })}><option value="recent">最近使用</option><option value="title">名称排序</option></select></label>{:else}<button onclick={() => showPanel("search")}>搜索</button>{/if}
       </div>
       {#if tab === "discover"}
-        <div class="discovery"><Discovery query={snapshot.query} kind={snapshot.kind} request={searchRequest} /></div>
+        <div class="discovery"><Discovery query={snapshot.query} kind={snapshot.kind} request={searchRequest} onsearch={() => showPanel("search")} /></div>
       {:else if rows.length}
-        <div class="collection" class:dense={displayProfile.profile.density === "compact"}>
-          <div class="list-area"><VirtualList bind:this={list} items={rows} itemKey={item => item.id} columns={galleryColumns} estimateSize={galleryRowHeight} focusId={selected?.id} initialScrollOffset={snapshot.scrollOffset} onselect={item => select(item)} onscroll={offset => handheldSession.patch({ scrollOffset: offset })} label="全部作品封面网格">
+        <div class="collection" class:dense={displayProfile.profile.density === "compact"} class:single={rows.length === 1}>
+          <div class="list-area"><VirtualList bind:this={list} items={rows} itemKey={item => item.id} columns={visibleColumns} estimateSize={visibleRowHeight} focusId={selected?.id} initialScrollOffset={snapshot.scrollOffset} onselect={item => select(item)} onscroll={offset => handheldSession.patch({ scrollOffset: offset })} label="全部作品封面网格">
             {#snippet children(item)}
               <div class="gallery-card" class:selected={selected?.id === item.id}>
                 <button class="content-row" class:selected={selected?.id === item.id} data-focus-key={item.id} aria-label={item.title + "，" + item.progressLabel} onclick={() => select(item)} ondblclick={() => void handheldContentStore.activate(item)} onfocus={() => select(item)}>
@@ -390,4 +393,49 @@
   .local-results button,.album-picks button {min-height:52px;border-radius:12px;background:#fff;}
   @media(max-width:960px) {.header {gap:5px;padding:7px 10px;}.header nav button {padding:7px 11px;}.brand {display:none;}.body:not(.inner) {padding:10px;gap:8px;}.gallery-card {border-radius:13px;}.tools {grid-template-columns:repeat(2,minmax(0,1fr));}}
   @media(max-height:550px) {.hints {min-height:44px;}.section-heading {min-height:36px;}.header nav button {min-height:44px;}.short-heading {display:none;}.filters {min-width:0;}.filters label {flex:none;}.filters select {max-width:96px;}.compact .kind-tabs button {padding-inline:8px;}.quick-controls {gap:5px;}.quick-controls .field input[type=range] {min-height:32px;}.quick-controls .check {min-height:36px;}.quick-controls p {font-size:12px;}}
+  /* The media canvas and its controls share one accent, material and focus language. */
+  .handheld-shell {--hh-muted:#aeb8cb;--hh-action:color-mix(in srgb,var(--hh-accent) 48%,#b5a6ef);--accent:var(--hh-action);--accent-ring:color-mix(in srgb,var(--hh-action) 48%,transparent);--bg-void:#0e1523;background:radial-gradient(circle at 78% -30%,#2d3651 0,transparent 42%),#0e1523;color:#f2f3f8;}
+  .handheld-shell.light {background:#0e1523;}
+  .header {background:#101827eb;border-color:#ffffff1a;padding:9px calc(var(--hh-gap)*1.7);}
+  .brand {color:#d9cffb;font-size:21px;letter-spacing:-.06em;}
+  .header nav {gap:5px;}.header nav button,.handheld-shell .header nav button {color:#b9c3d5;min-width:68px;}
+  .header nav button.active,.header nav button.active:hover,.handheld-shell .header nav button.active,.handheld-shell .header nav button.active:hover {background:#dcd4f0;color:#1a1d2b;box-shadow:none;}
+  .handheld-shell button,.handheld-shell select {background:#202a3a;border-color:#ffffff25;color:#eff0f8;}
+  .handheld-shell button:hover {background:#303b50;}
+  .handheld-shell .icon-button {background:#ffffff0d;border-color:#ffffff2c;color:#f1f2fa;}
+  .handheld-shell button:focus-visible,.handheld-shell select:focus-visible,.handheld-shell input:focus-visible {outline:3px solid #d9caff;outline-offset:2px;}
+  .body {padding:calc(var(--hh-gap)*1.1) calc(var(--hh-gap)*1.7);gap:calc(var(--hh-gap)*.78);}
+  .section-heading h1 {color:#f5f2fb;font-size:clamp(27px,2.5vw,40px);}.section-heading>span {color:#aeb8c9;}
+  .library-switch {gap:4px;}.library-switch button {color:#b9c2d2;}.library-switch button.active {background:#dcd4f0;color:#202234;border-color:#dcd4f0;}
+  .kind-tabs button {color:#aab5c8;}.kind-tabs button.active {background:#dcd4f0;color:#222238;border-color:#dcd4f0;}
+  .filters select {background:#1e293b;border-color:#ffffff30;color:#f3f3f8;} option {background:#1e293b;color:#f3f3f8;}
+  .collection {min-width:0;}.list-area :global(.wh-virtual-list) {--wh-gap:14px;scrollbar-color:#566279 transparent;}
+  .gallery-card {background:#1a2433;border-color:#ffffff24;border-radius:13px;box-shadow:none;}
+  .gallery-card.selected {border:2px solid var(--hh-action);box-shadow:0 0 0 2px #b5a6ef35;}
+  .content-row,.content-row.selected {padding:5px;border-radius:11px;}
+  .gallery-art {border-radius:8px;background:#29334a;}
+  .row-copy {height:70px;padding:8px 6px 0;}.row-copy small {color:#c2b4f0;}.row-copy strong {color:#f4f2fa;}.row-copy>span {color:#b4bfd1;}
+  .card-action {top:calc(100% - 122px);background:#efebfc!important;color:#211c30!important;box-shadow:0 4px 18px #05091655;}
+  .collection.single .gallery-card {max-width:100%;}
+  .collection.single .content-row {flex-direction:row;align-items:stretch;gap:20px;}
+  .collection.single .gallery-art {width:min(40%,390px);flex:none;}
+  .collection.single .row-copy {height:auto;min-width:0;flex:1;justify-content:center;gap:10px;padding:14px 20px 70px 0;}
+  .collection.single .row-copy strong {font-size:clamp(25px,3vw,42px);white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;}
+  .collection.single .card-action {top:auto;bottom:22px;right:24px;}
+  .handheld-shell .primary {background:#dcd4f0;color:#1b1c2b;border-color:#dcd4f0;}.handheld-shell .primary:hover {background:#ede8fb;}
+  .tools {grid-template-columns:repeat(3,minmax(0,1fr));align-content:start;}.tools button {background:#1b2637;border-color:#ffffff20;box-shadow:none;color:#f3f3f8;}
+  .tools .tool-tile {display:flex;align-items:center;gap:16px;min-height:140px;padding:19px;text-align:left;}
+  .tool-icon {width:52px;height:52px;flex:none;display:grid;place-items:center;border:1px solid #e0d2fb38;border-radius:14px;background:#d7c9f214;color:#dacafb;}
+  .tool-copy {flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;}.tool-copy strong {color:#f5f3fa;font-size:18px;line-height:1.3;}.tools small {margin:0;color:#b4bfd0;}.tool-tile> :global(svg:last-child) {color:#a9b3c6;}
+  .empty {width:min(100%,720px);padding:24px;box-sizing:border-box;border:1px solid #ffffff1b;border-radius:18px;background:#1a2433;color:#f4f2fa;}
+  .empty-symbol {color:#d2c4f1;}.empty p,.handheld-shell p {color:#b5bfd0;}
+  .hints {background:#101827;border-color:#ffffff1a;color:#d6dce9;}.hints kbd {background:#28354a;border-color:#67758b;color:#e8e0fc;}
+  .inner-heading {background:#151f2f;color:#f2f2f8;border-color:#ffffff1e;}
+  :global(.handheld-drawer) {background:#f4f1ed!important;color:#242737!important;border-left-color:#ded6e1!important;box-shadow:-18px 0 50px #03071280;}
+  :global(.handheld-drawer button),:global(.handheld-drawer select),:global(.handheld-drawer input) {color:#242737;background:#fffefa;border-color:#d9d3df;}
+  :global(.handheld-drawer .primary) {background:#514375!important;color:#fff!important;}
+  .local-results,.album-picks {border-color:#d9d3df;}.local-results>span {color:#514375;}.local-results button,.album-picks button {background:#fffefa;}
+  @media(max-width:960px) {.header {padding:7px 10px;}.body:not(.inner) {padding:10px;}.gallery-card {border-radius:10px;}.collection.single .content-row {gap:10px;}.collection.single .gallery-art {width:35%;}.collection.single .row-copy {padding:8px 7px 62px 0;}.collection.single .row-copy strong {font-size:22px;}}
+  @media(max-width:960px) {.tools {grid-template-columns:repeat(2,minmax(0,1fr));}.tools .tool-tile {min-height:98px;padding:12px;gap:10px;}.tool-icon {width:42px;height:42px;}.tool-copy strong {font-size:15px;}}
+  @media(max-height:550px) {.body:not(.inner) {gap:5px;}.section-heading {min-height:36px;}.collection.single .row-copy {gap:3px;}.collection.single .row-copy strong {font-size:19px;}.collection.single .card-action {bottom:8px;right:9px;}}
 </style>

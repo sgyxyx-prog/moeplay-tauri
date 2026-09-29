@@ -43,6 +43,9 @@ test.describe("Windows handheld interaction", () => {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     await expect(page.getByTestId("windows-handheld-shell")).toBeVisible();
+    const stage = await page.locator(".feature-stage").boundingBox();
+    const body = await page.locator(".body").boundingBox();
+    expect(stage && body && stage.height >= body.height * .75).toBe(true);
     await page.screenshot({ path: testInfo.outputPath("editorial-home-1280.png") });
     await page.getByRole("button", { name: "藏馆", exact: true }).click();
     await page.getByRole("button", { name: "全部作品", exact: true }).click();
@@ -89,6 +92,19 @@ test.describe("Windows handheld interaction", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByTestId("windows-handheld-shell")).toBeVisible();
   });
+  test("keeps discovery and personal tools readable in the shared shell", async ({ appPage: page }, testInfo) => {
+    await page.getByRole("button", { name: "发现", exact: true }).click();
+    await expect(page.getByRole("region", { name: "发现搜索结果" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("discover-1280.png") });
+    await page.getByRole("button", { name: "搜索作品" }).click();
+    await expect(page.getByRole("searchbox", { name: "作品名称" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "我的", exact: true }).click();
+    await expect(page.getByRole("button", { name: "设置与同步" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("mine-1280.png") });
+    const shell = page.getByTestId("windows-handheld-shell");
+    expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  });
 });
 
 test.describe("Windows handheld artwork states", () => {
@@ -129,6 +145,9 @@ test.describe("Windows handheld artwork states", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.getByRole("button", { name: "藏馆", exact: true }).click();
     await page.screenshot({ path: testInfo.outputPath("gallery-art-states.png") });
+    const firstCard = await page.locator(".gallery-card").first().boundingBox();
+    const lastCard = await page.locator(".gallery-card").last().boundingBox();
+    expect(firstCard && lastCard && firstCard.height >= 350 && lastCard.x + lastCard.width <= 1280).toBe(true);
     expect(await shell.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     await page.setViewportSize({ width: 640, height: 400 });
     await expect(page.locator(".content-row").first()).toBeInViewport();
@@ -154,6 +173,7 @@ test.describe("personal work album", () => {
   test("creates, arranges and restores a playable album", async ({ appPage: page, gamepad }, testInfo) => {
     await page.getByRole("button", { name: "藏馆", exact: true }).click();
     await page.getByRole("button", { name: "我的专题 · 0" }).click();
+    await page.screenshot({ path: testInfo.outputPath("album-index-1280.png") });
     await page.getByPlaceholder("给新专题起个名字").fill("科幻故事收藏");
     await page.getByRole("button", { name: "创建专题" }).click();
     await expect(page.getByRole("region", { name: "专题 科幻故事收藏" })).toBeVisible();
