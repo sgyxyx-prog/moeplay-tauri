@@ -363,4 +363,28 @@
   .album-detail.compact .selected-actions {min-height:48px;flex-wrap:nowrap;padding:3px 5px;gap:4px;}
   .album-detail.compact .selected-actions>span {display:none;}
   .album-detail.compact .selected-actions button {flex:1;min-width:0;padding-inline:5px;font-size:12px;}
+  .album-index,.album-detail {color:#f2f2f8;scrollbar-color:#59637b transparent;}
+  .eyebrow,.album-count {color:#d8c9ff;}
+  .album-lead p,.tile-copy em,.selected-actions>span {color:#b4bfd0;}
+  button {background:#202b3b;border-color:#ffffff28;color:#f2f3f8;}
+  button:hover {background:#303c50;}button:focus-visible,input:focus-visible,textarea:focus-visible {outline-color:#d7c8fa;}
+  .accent {background:#e5def8;color:#211d32;border-color:#e5def8;}
+  input,textarea {background:#192334;border-color:#ffffff36;color:#f2f2fa;}
+  .album-tile {background:#1a2433;border-color:#ffffff21;box-shadow:none;border-radius:14px;}
+  .album-tile:focus-visible {border-color:#d7c8fa;}.tile-art {background:#26334a;}.tile-copy small {color:#cdbdf9;}.tile-copy strong {color:#f5f3fb;}
+  .album-cover {border-color:#ffffff24;border-radius:16px;}
+  .cover-wash {background:linear-gradient(90deg,#0a1120f7 0%,#0a1120d9 39%,#0a11202a 82%);}
+  .cover-content p {color:#d4dbea;}.cover-content .eyebrow {color:#e1d5fb;}.back-link {color:#ece4ff;}
+  .edit-cover {background:#eee9fa;color:#221e32;border-color:#eee9fa;}
+  .member {background:#1c2737;border-color:#ffffff24;border-radius:12px;}
+  .member.selected {background:#28324a;border-color:var(--hh-action,#c7b6f1);box-shadow:none;}
+  .chapter-index {color:#d4c3fa;}.member-art {background:#303b53;}
+  .member-copy small {color:#cbbbf2;}.member-copy em,.member-note {color:#b7c2d2;}
+  .selected-actions {background:#192434;border-color:#ffffff21;}.selected-actions strong {color:#f7f3fd;}
+  .empty {background:#192435;border-color:#ffffff29;color:#d7c8fa;}.empty p {color:#b9c2d3;}
+  .album-panel {color:#242737;}.album-panel label {color:#4a4554;}.album-panel input,.album-panel textarea {background:#fffefa;border-color:#d9d2df;color:#242737;}
+  .album-panel button {background:#fffefa;border-color:#d9d2df;color:#242737;}.album-panel button:hover {background:#eee9f7;}
+  .relation {background:#fffefa;border-color:#ddd5e2;}.relation span {color:#62527c;}
+  .edit-block,.delete-tools {border-color:#d9d2df;}.danger {border-color:#c58f98!important;color:#a32d49!important;}
+  :global(.album-drawer) {background:#f4f1ed!important;color:#242737!important;border-left-color:#ded6e1!important;}
 </style>

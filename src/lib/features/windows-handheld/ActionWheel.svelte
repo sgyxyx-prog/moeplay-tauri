@@ -59,4 +59,13 @@
   .wheel-list button strong {flex:1;}.wheel-panel p {position:absolute;bottom:12px;margin:0;font-size:13px;color:#667084;}
   @media(max-height:780px) {.wheel-circle {width:390px;height:390px;}.wheel-action {transform:translate(-50%,-50%) rotate(var(--wheel-angle)) translateY(-152px) rotate(calc(-1 * var(--wheel-angle)));}}
   @media(prefers-reduced-motion:reduce) {.wheel-backdrop {backdrop-filter:none;}.wheel-action {transition:none;}}
+  .wheel-backdrop {background:#070c19c9;color:#f2f1f8;backdrop-filter:blur(12px);}
+  .wheel-backdrop.light {background:#090e1ae6;}
+  .wheel-panel {background:radial-gradient(circle at 50% 48%,#293752 0,#192436 56%,#111b2a 100%);border:1px solid #ffffff30;border-radius:20px;box-shadow:0 28px 70px #050714a8;}
+  .wheel-head {color:#e9e4f7;}.wheel-head button {background:#ffffff17;border-color:#ffffff39;color:#f5f2fa;}
+  .wheel-circle {background:radial-gradient(circle,#2b3752 0 28%,#1d2940 67%,#141e30 100%);border-color:#ffffff33;}
+  .wheel-circle:before {border-color:#ffffff29;}.center-art {background:#394562;color:#ded3f7;}
+  .wheel-action {background:#29354be8;border-color:#ffffff2e;color:#f2f1fa;box-shadow:0 5px 18px #04091477;}
+  .wheel-action.active,.wheel-action:focus-visible,.wheel-list button.active,.wheel-list button:focus-visible {outline-color:#ddcdfc;border-color:#d7c8fa;background:#dfd5f4;color:#222038;}
+  .wheel-list button {background:#28354a;border-color:#ffffff30;color:#f2f1fa;}.wheel-panel p {color:#b8c2d2;}
 </style>

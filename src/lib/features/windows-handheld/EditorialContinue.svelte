@@ -7,14 +7,17 @@
   import { displayProfile } from "./profile.svelte";
   import type { HandheldContentItem } from "./types";
 
-  let { items, selected, recentOffset, onrecentScroll, onselect, onopen, onmore, onalbum, onlibrary, onsearch, onimport }:
-    { items: HandheldContentItem[]; selected: HandheldContentItem | null; recentOffset: number;
+  let { items, selected, recentOffset, availableWidth, onrecentScroll, onselect, onopen, onmore, onalbum, onlibrary, onsearch, onimport }:
+    { items: HandheldContentItem[]; selected: HandheldContentItem | null; recentOffset: number; availableWidth: number;
       onrecentScroll: (offset: number) => void; onselect: (item: HandheldContentItem) => void;
       onopen: (item: HandheldContentItem) => void; onmore: () => void;
       onalbum: (id: string) => void; onlibrary: () => void; onsearch: () => void; onimport: () => void } = $props();
   const kinds = { game: "游戏", anime: "番剧", comic: "漫画", novel: "小说" };
   const kindIcon = { game: "gamepad", anime: "film", comic: "image", novel: "book" };
   const recent = $derived(items.slice(0, 24));
+  const recentCardWidth = $derived(recent.length <= 4
+    ? Math.max(190, Math.floor((availableWidth - 80 - (recent.length - 1) * 14) / Math.max(1, recent.length)))
+    : 242);
   const pinned = $derived(catalogStore.albums.filter(album => album.pinned).slice(0, 4));
   let failedImages = $state<string[]>([]);
   let fallbackFailed = $state(false);
@@ -26,7 +29,7 @@
 </script>
 
 {#if selected}
-  <div class="immersive-home">
+  <div class="immersive-home" class:solo={recent.length === 1 && !pinned.length}>
     <section class="feature-stage" aria-label="继续当前作品">
       {#if backdropSrc}
         <img class:wide={wideArt} class="stage-art" src={backdropSrc} alt="" decoding="async"
@@ -49,10 +52,11 @@
       </div>
     </section>
 
+    {#if recent.length > 1}
     <section class="recent-section" aria-label="最近使用">
-      <div class="section-heading"><div><h2>最近使用</h2><span>选一部作品，接着上次的位置</span></div><button onclick={onlibrary}>查看全部 <Icon name="arrowRight" size={16} /></button></div>
+      <div class="section-heading"><div><h2>继续探索</h2><span>你的故事，从这里接上</span></div><button onclick={onlibrary}>进入藏馆 <Icon name="arrowRight" size={16} /></button></div>
       <div class="recent-rail">
-        <VirtualList items={recent} itemKey={item => item.id} orientation="horizontal" estimateSize={182}
+        <VirtualList items={recent} itemKey={item => item.id} orientation="horizontal" estimateSize={recentCardWidth}
           focusId={selected.id} initialScrollOffset={recentOffset} onscroll={onrecentScroll} label="最近使用作品" onselect={onselect}>
           {#snippet children(item)}
             <button class="recent-card" class:selected={selected.id === item.id}
@@ -68,6 +72,7 @@
         </VirtualList>
       </div>
     </section>
+    {/if}
     {#if pinned.length}
       <section class="pinned-section" aria-label="置顶专题">
         <h2>置顶专题</h2><div>{#each pinned as album}
@@ -129,4 +134,39 @@
   @media(max-width:960px) {.feature-stage {height:clamp(260px,45vh,420px);} .stage-copy {width:66%;padding:20px;} .stage-art:not(.wide) {right:1%;width:45%;opacity:.65;} .stage-art.character {right:0;width:58%;}.section-heading span {display:none;}}
   @media(max-height:550px) {.feature-stage {min-height:246px;height:246px;} .stage-copy {gap:6px;padding:16px;width:72%;}.stage-copy h1 {font-size:26px;-webkit-line-clamp:2;line-clamp:2;}.stage-art {opacity:.42;}.recent-rail {height:160px;min-height:160px;}.thumb {height:91px;}}
   @media(prefers-reduced-motion:reduce) {.feature-stage,.recent-card {transition:none;}}
+  /* Current work is the canvas; the shelf expands to its content instead of leaving a white void. */
+  .immersive-home {gap:14px;padding:0 0 12px;scrollbar-color:#6a7188 transparent;}
+  .feature-stage {height:clamp(340px,53vh,620px);min-height:340px;border:1px solid #ffffff1c;border-radius:18px;background:#111827;box-shadow:none;}
+  .immersive-home.solo .feature-stage {height:auto;flex:1;min-height:350px;}
+  .feature-stage::after {background:linear-gradient(90deg,#0b1121 0%,#0b1121ee 23%,#0b1121b0 49%,#0b11212b 75%),linear-gradient(0deg,#0b11217d,transparent 45%);}
+  .feature-stage::before {content:"";position:absolute;inset:auto auto 0 0;width:30%;height:4px;background:var(--hh-action,#ad9dfc);z-index:2;}
+  .stage-art {right:0;width:57%;object-position:center right;filter:none;}
+  .stage-art.wide {width:100%;mask-image:none;object-position:center;}
+  .stage-art.character {width:70%;object-position:75% 20%;}
+  .stage-pattern {right:5%;top:10%;bottom:10%;border-color:#ffffff1f;background:linear-gradient(145deg,#625a8a55,#c2a6c332);}
+  .stage-copy {width:min(58%,700px);padding:clamp(26px,3.8vw,64px);gap:clamp(10px,1.4vh,18px);justify-content:flex-end;padding-bottom:clamp(32px,5vh,72px);}
+  .type-pill {padding:0;border:0;border-radius:0;background:transparent;color:#dcd7f8;letter-spacing:.13em;font-size:13px;}
+  h1 {font-size:clamp(32px,3.7vw,68px);line-height:1.08;font-weight:820;letter-spacing:-.045em;text-wrap:balance;text-shadow:0 2px 18px #0609126b;}
+  .progress-label {font-weight:550;color:#e5e8f3;}
+  progress {height:4px;width:min(420px,100%);}
+  .stage-actions {margin-top:10px;gap:12px;}
+  .stage-actions button {min-width:142px;border-radius:9px;padding:10px 22px;}
+  .primary {background:#f5f3ff;color:#19152a!important;box-shadow:none;}
+  .secondary {background:#131b2bbb;border-color:#e6e4f280;color:#fff;}
+  .recent-section {padding:17px 18px 18px;border:1px solid #ffffff19;border-radius:16px;background:#161e2c;}
+  .section-heading {margin-bottom:12px;}.section-heading>div {align-items:center;}
+  h2 {color:#f2f2f8;}.section-heading span {color:#a9b2c5;}
+  .section-heading button {color:#d6cdfb;}
+  .recent-rail {height:190px;min-height:190px;}
+  .recent-card {padding:0;gap:4px;border:1px solid #ffffff20;border-radius:11px;background:#202a3a;color:#f1f2f8;overflow:hidden;}
+  .recent-card.selected {border:2px solid var(--hh-action,#a392f5);background:#202a3a;box-shadow:0 0 0 2px #a99af840;}
+  .thumb {height:114px;border-radius:0;background:#26334b;}
+  .recent-title,.recent-card small {padding-inline:12px;}.recent-title {font-size:var(--hh-aux);}.recent-card small {color:#aeb8c9;}
+  .pinned-section {padding:16px;border:1px solid #ffffff1a;border-radius:16px;background:#161e2c;}
+  .pinned-section button {background:#252f42;border-color:#ffffff24;color:#f1f1f8;}.pinned-section small {color:#bac1d0;}
+  .welcome {max-width:none;min-height:100%;padding:clamp(25px,5vw,70px);box-sizing:border-box;margin:0;border:1px solid #ffffff1b;border-radius:18px;background:radial-gradient(circle at 83% 26%,#62649b8c,transparent 38%),linear-gradient(135deg,#121b2d,#293552);color:#fff;}
+  .welcome-icon {background:#ffffff25;color:#e5ddff;}.welcome p {color:#d2d7e5;}.welcome button:not(.primary) {background:#ffffff17;border-color:#ffffff53;color:#fff;}
+  button:focus-visible {outline-color:#d6c9ff;}
+  @media(max-width:960px) {.feature-stage {min-height:300px;height:clamp(300px,48vh,440px);}.stage-copy {width:74%;padding:24px;}.stage-art:not(.wide) {width:52%;}.stage-art.character {width:70%;}.feature-stage::after {background:linear-gradient(90deg,#0b1121 0%,#0b1121df 48%,#0b11215c 100%);}.recent-section {padding:12px;}}
+  @media(max-height:550px) {.feature-stage {min-height:246px;height:246px;}.immersive-home.solo .feature-stage {min-height:246px;}.stage-copy {width:80%;padding:15px;gap:5px;justify-content:center;}.stage-copy .type-pill {display:none;}.stage-copy h1 {font-size:26px;}.stage-actions {margin-top:2px;}.stage-actions button {min-height:44px;padding:6px 11px;min-width:0;}.recent-rail {height:160px;min-height:160px;}.thumb {height:90px;}}
 </style>
