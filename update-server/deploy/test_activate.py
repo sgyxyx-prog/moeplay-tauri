@@ -72,6 +72,22 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("Missing release channel", result.stderr)
         self.assertFalse((self.root / "current").exists())
 
+    def test_windows_only_patch_accepts_signed_windows_channels(self):
+        probe = self.root / "symlink-probe"
+        try:
+            probe.symlink_to("incoming", target_is_directory=True)
+            probe.unlink()
+        except OSError:
+            self.skipTest("Host does not allow symlinks; run on the Linux deployment host")
+        for asset in list(self.manifest["assets"]):
+            if asset["platform"] == "android":
+                (self.assets / asset["file"]).unlink()
+        self.manifest["assets"] = [asset for asset in self.manifest["assets"] if asset["platform"] == "windows"]
+        self.write_manifest()
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "current").readlink().as_posix(), "sites/0.23.0")
+
     def test_existing_version_preserved(self):
         existing = self.root / "sites" / "0.23.0"
         existing.mkdir(parents=True)

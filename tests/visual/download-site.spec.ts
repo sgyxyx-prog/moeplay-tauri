@@ -42,3 +42,17 @@ test("manifest failure retains working GitHub download links", async ({ page }) 
   await expect(page.locator("#release-status")).toContainText("GitHub 备用");
   await expect(page.locator("#windows-download")).toHaveAttribute("href", "https://github.com/sgyxyx-prog/moeplay-tauri/releases");
 });
+
+test("Windows-only release links the previous Android package with its actual version", async ({ page }) => {
+  await page.route(`${baseURL}/release-manifest.json`, route => route.fulfill({ json: {
+    schemaVersion: 1, version: "0.24.6", commit: "a".repeat(40), publishedAt: "2026-09-29T00:00:00Z",
+    assets: [{ channel: "installer", platform: "windows", architecture: "x64", file: "MoeGame_0.24.6_x64-setup.exe", size: 100, sha256: "a".repeat(64) }],
+  } }));
+  await page.route("**/versions.json", route => route.fulfill({ json: ["0.24.5", "0.24.6"] }));
+  await page.route("**/versions/0.24.5/release-manifest.json", route => route.fulfill({ json: {
+    version: "0.24.5", assets: [{ channel: "release", platform: "android", file: "MoeGame_0.24.5_arm64-release.apk" }],
+  } }));
+  await page.goto(baseURL);
+  await expect(page.locator("#android-download")).toHaveAttribute("href", "/downloads/0.24.5/MoeGame_0.24.5_arm64-release.apk");
+  await expect(page.locator("#android-download small")).toContainText("v0.24.5");
+});

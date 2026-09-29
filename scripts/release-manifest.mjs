@@ -55,7 +55,9 @@ export function verifyManifest(directory, expected = {}) {
     const actual = describeAsset(directory, asset.file, manifest.version);
     for (const field of ["sha256", "size", "platform", "channel", "architecture"]) if (actual[field] !== asset[field]) throw new Error(`Mismatch ${asset.file}: ${field}`);
   }
-  for (const channel of ["installer", "msi", "portable", "release", "compat"]) if (!manifest.assets.some(a => a.channel === channel)) throw new Error(`Missing ${channel} artifact`);
+  for (const channel of ["installer", "msi", "portable"]) if (!manifest.assets.some(a => a.channel === channel && a.platform === "windows")) throw new Error(`Missing ${channel} artifact`);
+  const androidChannels = new Set(manifest.assets.filter(a => a.platform === "android").map(a => a.channel));
+  if (androidChannels.size && (!androidChannels.has("release") || !androidChannels.has("compat"))) throw new Error("Android release and compat artifacts must be published together");
   verifyAndroidVerification(manifest);
   const latest = JSON.parse(fs.readFileSync(path.join(directory, "latest.json"), "utf8"));
   if (latest.version !== manifest.version || !latest.platforms?.["windows-x86_64"]?.signature) throw new Error("Missing signed Windows update metadata");
